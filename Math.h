@@ -37,6 +37,11 @@ struct vec3
 	{
 		return sqrt(length_squared());
 	}
+	bool near_zero() const 
+	{
+		const static float EPSILON = 0.00001f;
+		return fabs(x) < EPSILON && fabs(y) < EPSILON && fabs(z) < EPSILON;
+	}
 	union { float x, r; };
 	union { float y, g; };
 	union { float z, b; };

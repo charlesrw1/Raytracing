@@ -15,7 +15,7 @@ const float VIEW_HEIGHT = 2.0;
 const float VIEW_WIDTH = ARATIO * VIEW_HEIGHT;
 const float NEAR = 1.0;
 
-const vec3 CAM_POS = vec3(0.0);
+const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
 const float PI = 3.14159;
 const int SAMPLES_PER_PIXEL = 50;
@@ -55,7 +55,14 @@ vec3 random_in_unit_sphere()
 		return p;
 	}
 }
-
+vec3 random_unit_vector()
+{
+	return normalize(random_in_unit_sphere());
+}
+vec3 reflect(vec3 v, vec3 n)
+{
+	return v - 2 * dot(v, n) * n;
+}
 
 
 u8* buffer = nullptr;
@@ -76,6 +83,7 @@ void write_out(vec3 color, int x, int y) {
 	buffer[idx+2] = clamp(color.z,0,1)* 255;
 }
 
+
 struct Ray
 {
 	Ray() : pos(vec3(0)), dir(vec3(1,0,0)) {}
@@ -88,8 +96,11 @@ struct Ray
 	vec3 pos;
 	vec3 dir;
 };
+struct Material;
 struct Trace
 {
+	const Material* mat_ptr = nullptr;
+
 	vec3 point;
 	vec3 normal;
 	float t;
@@ -101,11 +112,75 @@ struct Trace
 	}
 };
 
+enum MaterialType
+{
+	LAMBERTIAN,
+	METAL,
+};
+struct Material
+{
+	Material() {
+		type = LAMBERTIAN;
+		lambertian.albedo = vec3(0.5);
+	}
+
+	static Material make_lambertian(vec3 albedo) {
+		Material m;
+		m.type = LAMBERTIAN;
+		m.lambertian.albedo = albedo;
+		return m;
+	}
+	static Material make_metal(vec3 albedo) {
+		Material m;
+		m.type = METAL;
+		m.metal.albedo = albedo;
+		return m;
+	}
+
+	MaterialType type;
+	union {
+		struct {
+			vec3 albedo;
+		}lambertian;
+		struct {
+			vec3 albedo;
+		}metal;
+	};
+
+	bool scatter(Ray& ray_in, Trace& res, vec3& atteunuation, Ray& scattered_ray) const {
+		switch (type)
+		{
+		case LAMBERTIAN:
+		{
+			vec3 scatter_dir = res.normal + random_unit_vector();
+
+			if (scatter_dir.near_zero())
+				scatter_dir = res.normal;
+
+			scattered_ray = Ray(res.point + res.normal * 0.001f, normalize(scatter_dir));
+			atteunuation = lambertian.albedo;
+			return true;
+		}break;
+		case METAL:
+		{
+			vec3 reflected = reflect(ray_in.dir, res.normal);
+			scattered_ray = Ray(res.point + res.normal * 0.001f, normalize(reflected));
+			atteunuation = metal.albedo;
+			return (dot(scattered_ray.dir, res.normal) > 0);
+		}break;
+		default:
+			return false;
+		}
+	}
+
+};
+
 
 struct Sphere
 {
 	Sphere() {}
 	Sphere(vec3 center, float radius) : center(center), radius(radius) {}
+	Sphere(vec3 center, float radius, Material mat) : center(center), radius(radius), mat(mat) {}
 
 	bool hit(Ray r, float tmin, float tmax, Trace* res)const {
 		vec3 oc = r.pos - center;
@@ -125,12 +200,15 @@ struct Sphere
 		res->t = root;
 		res->point = r.at(root);
 		res->set_face_normal(r, (res->point - center) / radius);
+		res->mat_ptr = &mat;
 		return true;
 	}
 
 
 	vec3 center;
 	float radius;
+
+	Material mat;
 };
 
 struct Scene
@@ -179,8 +257,16 @@ vec3 ray_color(Ray r, Scene& world, int depth)
 		return vec3(0);
 	
 	if (world.trace_scene(r, 0, 1000, &trace)) {
-		vec3 target = trace.point + trace.normal + random_in_unit_sphere();
+		Ray scattered_ray;
+		vec3 attenuation;
+		/*
+		vec3 target = trace.point + trace.normal + random_unit_vector();
 		return 0.5 * ray_color(Ray(trace.point+trace.normal*0.001f, normalize(target - trace.point)), world, depth - 1);
+		*/
+		if (trace.mat_ptr->scatter(r, trace, attenuation, scattered_ray))
+			return attenuation * ray_color(scattered_ray, world, depth - 1);
+		return vec3(0);
+
 	}
 	float t = 0.5 * (r.dir.y + 1.0);
 	return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
@@ -192,7 +278,8 @@ int main()
 	
 	Scene world;
 	Camera cam;
-	world.spheres.push_back(Sphere(vec3(0, 0, -1), 0.5));
+	world.spheres.push_back(Sphere( vec3(0, 0, -1), 0.5, Material::make_metal(vec3(0.2,0.2,1.0)) ));
+	world.spheres.push_back(Sphere( vec3(1, -0.25, -1), 0.25, Material::make_lambertian(vec3(0.8,0.2,0.2)) ));
 	world.spheres.push_back(Sphere(vec3(0, -100.5, -1), 100));
 
 	printf("Starting: ");
