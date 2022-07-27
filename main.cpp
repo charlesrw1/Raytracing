@@ -18,7 +18,7 @@ const float NEAR = 1.0;
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
 const float PI = 3.14159;
-const int SAMPLES_PER_PIXEL = 50;
+const int SAMPLES_PER_PIXEL = 5;
 const int MAX_DEPTH = 50;
 const float GAMMA = 2.2;
 
@@ -63,7 +63,19 @@ vec3 reflect(vec3 v, vec3 n)
 {
 	return v - 2 * dot(v, n) * n;
 }
-
+vec3 refract(vec3 uv, vec3 n, float etai_over_etat)
+{
+	float theta = fmin(dot(-uv, n),1.0);
+	vec3 r_out_perp = etai_over_etat * (uv + theta * n);
+	vec3 r_out_parallel = -sqrt(fabs(1.0 - r_out_perp.length_squared())) * n;
+	return r_out_perp + r_out_parallel;
+}
+float reflectance(float cosine, float ref_idx)
+{
+	float r0 = (1 - ref_idx) / (1 + ref_idx);
+	r0 = r0 * r0;
+	return r0 + (1 - r0) * pow((1 - cosine), 5);
+}
 
 u8* buffer = nullptr;
 void write_out(vec3 color, int x, int y) {
@@ -116,6 +128,7 @@ enum MaterialType
 {
 	LAMBERTIAN,
 	METAL,
+	DIELECTRIC,
 };
 struct Material
 {
@@ -130,10 +143,17 @@ struct Material
 		m.lambertian.albedo = albedo;
 		return m;
 	}
-	static Material make_metal(vec3 albedo) {
+	static Material make_metal(vec3 albedo, float fuzz = 0.f) {
 		Material m;
 		m.type = METAL;
 		m.metal.albedo = albedo;
+		m.metal.fuzz = fuzz;
+		return m;
+	}
+	static Material make_dielectric(float index) {
+		Material m;
+		m.type = DIELECTRIC;
+		m.dielectric.index_r = index;
 		return m;
 	}
 
@@ -144,7 +164,11 @@ struct Material
 		}lambertian;
 		struct {
 			vec3 albedo;
+			float fuzz;
 		}metal;
+		struct {
+			float index_r;
+		}dielectric;
 	};
 
 	bool scatter(Ray& ray_in, Trace& res, vec3& atteunuation, Ray& scattered_ray) const {
@@ -164,10 +188,32 @@ struct Material
 		case METAL:
 		{
 			vec3 reflected = reflect(ray_in.dir, res.normal);
-			scattered_ray = Ray(res.point + res.normal * 0.001f, normalize(reflected));
+			scattered_ray = Ray(res.point + res.normal * 0.001f, normalize(reflected + metal.fuzz*random_in_unit_sphere()));
 			atteunuation = metal.albedo;
 			return (dot(scattered_ray.dir, res.normal) > 0);
 		}break;
+
+		case DIELECTRIC:
+		{
+			atteunuation = vec3(1);
+			float refrac_ratio = (res.front_face) ? (1.0 / dielectric.index_r) : dielectric.index_r;
+
+			float cos_theta = fmin(dot(-ray_in.dir, res.normal), 1.0);
+			float sin_theta = sqrt(1.f - cos_theta * cos_theta);
+
+			bool cant_refract = refrac_ratio * sin_theta > 1.f;
+			vec3 direction;
+			if (cant_refract)
+				direction = reflect(ray_in.dir, res.normal);
+			else
+				direction = refract(ray_in.dir, res.normal, refrac_ratio);
+
+			//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
+			scattered_ray = Ray(res.point + res.normal * ((cant_refract) ? 0.001f:-0.001f), normalize(direction));
+			return true;
+
+		}break;
+
 		default:
 			return false;
 		}
@@ -237,13 +283,53 @@ struct Camera
 		vertical = vec3(0, VIEW_HEIGHT, 0);
 		lower_left = CAM_POS - horizontal / 2 - vertical / 2 - vec3(0, 0, NEAR);
 	}
-
 	Ray get_ray(float u, float v) {
 		return Ray(origin, normalize(lower_left + u * horizontal + v * vertical - origin));
 	}
+	Camera(vec3 cam_origin, vec3 look_pos, vec3 up, float yfov, float aspect_ratio)
+	{
 
+		float theta = radians(yfov);
+		float h = tan(theta / 2);
+		float view_height = h * 2;
+		float view_width = view_height * aspect_ratio;
+
+		vec3 w = normalize(cam_origin-look_pos);
+		vec3 u = normalize(cross(up, w));
+		vec3 v = normalize(cross(w, u));
+
+		origin = cam_origin;
+		horizontal = view_width * u;
+		vertical = view_height * v;
+		front = w;
+
+		lower_left = origin - horizontal / 2 - vertical / 2 - front;
+	}
+
+	void look_dir(vec3 cam_origin, vec3 front_dir, vec3 up, float yfov, float aspect_ratio)
+	{
+		float theta = radians(yfov);
+		float h = tan(theta / 2);
+		float view_height = h * 2;
+		float view_width = view_height * aspect_ratio;
+
+		vec3 w = -front_dir;
+		vec3 u = normalize(cross(up, w));
+		vec3 v = normalize(cross(w, u));
+
+		origin = cam_origin;
+		horizontal = view_width * u;
+		vertical = view_height * v;
+		front = w;
+
+		lower_left = origin - horizontal / 2 - vertical / 2 - front;
+	}
 
 	vec3 origin;
+	vec3 front;
+	vec3 up;
+
+
 	vec3 horizontal;
 	vec3 vertical;
 	vec3 lower_left;
@@ -274,12 +360,21 @@ vec3 ray_color(Ray r, Scene& world, int depth)
 
 int main()
 {
+	srand(time(NULL));
+
 	buffer = new u8[WIDTH * HEIGHT * 3];
 	
 	Scene world;
-	Camera cam;
+	//Camera cam;
+	Camera cam (CAM_POS, CAM_POS+vec3(0,0,-1), vec3(0, 1, 0), 45, ARATIO);
+	cam.look_dir(vec3(0,0,0.3),vec3(0,0,-1), vec3(0, 1, 0), 45, ARATIO);
+
+	world.spheres.push_back(Sphere(vec3(0.15, -0.3, -0.55), 0.18, Material::make_metal(vec3(1))));
+
+
 	world.spheres.push_back(Sphere( vec3(0, 0, -1), 0.5, Material::make_metal(vec3(0.2,0.2,1.0)) ));
-	world.spheres.push_back(Sphere( vec3(1, -0.25, -1), 0.25, Material::make_lambertian(vec3(0.8,0.2,0.2)) ));
+	world.spheres.push_back(Sphere( vec3(1, -0.3, -1), 0.25, Material::make_lambertian(vec3(0.8,0.2,0.2)) ));
+	world.spheres.push_back(Sphere(vec3(-0.4, -0.25, -0.5), 0.25, Material::make_dielectric(1.5)));
 	world.spheres.push_back(Sphere(vec3(0, -100.5, -1), 100));
 
 	printf("Starting: ");

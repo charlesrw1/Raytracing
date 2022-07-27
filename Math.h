@@ -99,4 +99,38 @@ inline vec3 normalize(vec3 v)
 {
 	return v / v.length();
 }
+
+struct mat4
+{
+	float m[16];
+	/* 
+		0 4 8 12
+		1 5 9 13
+		2 6 10 14 
+		3 7 11 15
+	*/
+
+	mat4() {}
+	mat4(float a) {
+		m[0] = m[5] = m[10] = m[15] = a;
+	}
+	mat4(float a, float b, float c, float d,
+		float e, float f, float g, float h,
+		float i, float j, float k, float l,
+		float mm, float n, float o, float p)
+	{
+		m[0] = a; m[1] = b; m[2] = c; m[3] = d;
+		m[4] = e; m[5] = f; m[6] = g; m[7] = h;
+		m[8] = i; m[9] = j; m[10] = k; m[11] = l;
+		m[12] = mm; m[13] = n; m[14] = o; m[15] = p;
+	}
+
+};
+
+float determinant()
+{
+	return 0;
+}
+
+
 #endif // !VEC3_H
