@@ -8,7 +8,7 @@
 typedef unsigned char u8;
 typedef unsigned int u32;
 const int WIDTH = 400;
-const int HEIGHT = 250;
+const int HEIGHT = 300;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -18,12 +18,12 @@ const float NEAR = 1.0;
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
 const float PI = 3.14159;
-const int SAMPLES_PER_PIXEL = 5;
+const int SAMPLES_PER_PIXEL = 50;
 const int MAX_DEPTH = 50;
 const float GAMMA = 2.2;
 
 
-const char* OUTPUT_NAME = "Output.bmp";
+const char* OUTPUT_NAME[2] = { "Output.bmp","Output2.bmp" };
 
 float radians(float degrees)
 {
@@ -59,6 +59,15 @@ vec3 random_unit_vector()
 {
 	return normalize(random_in_unit_sphere());
 }
+
+vec3 random_in_unit_disk()
+{
+	while (1) {
+		vec3 p = vec3(random_float(-1, 1), random_float(-1, 1), 0);
+		if (p.length_squared() >= 1) continue;
+		return p;
+	}
+}
 vec3 reflect(vec3 v, vec3 n)
 {
 	return v - 2 * dot(v, n) * n;
@@ -76,11 +85,19 @@ float reflectance(float cosine, float ref_idx)
 	r0 = r0 * r0;
 	return r0 + (1 - r0) * pow((1 - cosine), 5);
 }
+vec3 pow(vec3 V, float e)
+{
+	return vec3(pow(V.x, e), pow(V.y, e), pow(V.z, e));
+}
+vec3 abs(vec3 V)
+{
+	return vec3(fabs(V.x), fabs(V.y), fabs(V.z));
+}
 
-u8* buffer = nullptr;
-void write_out(vec3 color, int x, int y) {
+u8* buffer[2] = { nullptr,nullptr };
+void write_out(vec3 color, int x, int y, int samples, int file = 0) {
 	assert(x < WIDTH&& y < HEIGHT);
-	float scale = 1.0 / SAMPLES_PER_PIXEL;
+	float scale = 1.0 / samples;
 
 	color *= scale;
 	color.x = pow(color.x, 1 / GAMMA);
@@ -90,24 +107,19 @@ void write_out(vec3 color, int x, int y) {
 
 
 	int idx = y * WIDTH * 3 + x * 3;
-	buffer[idx] = clamp(color.x,0,1) * 255;
-	buffer[idx+1] = clamp(color.y,0,1)* 255;
-	buffer[idx+2] = clamp(color.z,0,1)* 255;
+	buffer[file][idx] = clamp(color.x,0,1) * 255;
+	buffer[file][idx+1] = clamp(color.y,0,1)* 255;
+	buffer[file][idx+2] = clamp(color.z,0,1)* 255;
+}
+void write_out_no_scale(vec3 color, int x, int y, int file = 1)
+{
+	assert(x < WIDTH&& y < HEIGHT);
+	int idx = y * WIDTH * 3 + x * 3;
+	buffer[file][idx] = clamp(color.x, 0, 1) * 255;
+	buffer[file][idx + 1] = clamp(color.y, 0, 1) * 255;
+	buffer[file][idx + 2] = clamp(color.z, 0, 1) * 255;
 }
 
-
-struct Ray
-{
-	Ray() : pos(vec3(0)), dir(vec3(1,0,0)) {}
-	Ray(vec3 pos, vec3 dir) :pos(pos), dir(dir) {}
-
-	vec3 at(float t) const {
-		return pos + dir * t;
-	}
-
-	vec3 pos;
-	vec3 dir;
-};
 struct Material;
 struct Trace
 {
@@ -129,6 +141,7 @@ enum MaterialType
 	LAMBERTIAN,
 	METAL,
 	DIELECTRIC,
+	EMIT,
 };
 struct Material
 {
@@ -156,6 +169,12 @@ struct Material
 		m.dielectric.index_r = index;
 		return m;
 	}
+	static Material make_light(vec3 emit_color) {
+		Material m;
+		m.type = EMIT;
+		m.emitted = emit_color;
+		return m;
+	}
 
 	MaterialType type;
 	union {
@@ -170,6 +189,12 @@ struct Material
 			float index_r;
 		}dielectric;
 	};
+	vec3 emitted = vec3(0.0);
+
+	vec3 get_emitted() const {
+		return emitted;
+	}
+
 
 	bool scatter(Ray& ray_in, Trace& res, vec3& atteunuation, Ray& scattered_ray) const {
 		switch (type)
@@ -218,8 +243,19 @@ struct Material
 			return false;
 		}
 	}
+};
+
+struct BVHNode
+{
 
 };
+
+
+class BVH
+{
+
+};
+
 
 
 struct Sphere
@@ -284,9 +320,13 @@ struct Camera
 		lower_left = CAM_POS - horizontal / 2 - vertical / 2 - vec3(0, 0, NEAR);
 	}
 	Ray get_ray(float u, float v) {
-		return Ray(origin, normalize(lower_left + u * horizontal + v * vertical - origin));
+
+		vec3 rd = lens_radius * random_in_unit_disk();
+		vec3 offset = u_unit * rd.x + v_unit * rd.y;
+
+		return Ray(origin + offset, normalize(lower_left + u * horizontal + v * vertical - origin - offset));
 	}
-	Camera(vec3 cam_origin, vec3 look_pos, vec3 up, float yfov, float aspect_ratio)
+	Camera(vec3 cam_origin, vec3 look_pos, vec3 up, float yfov, float aspect_ratio, float aperature, float focus_dist)
 	{
 
 		float theta = radians(yfov);
@@ -299,14 +339,18 @@ struct Camera
 		vec3 v = normalize(cross(w, u));
 
 		origin = cam_origin;
-		horizontal = view_width * u;
-		vertical = view_height * v;
+		horizontal = view_width * u * focus_dist;
+		vertical = view_height * v * focus_dist;
 		front = w;
 
-		lower_left = origin - horizontal / 2 - vertical / 2 - front;
+		lower_left = origin - horizontal / 2 - vertical / 2 - front*focus_dist;
+
+		lens_radius = aperature / 2.f;
+		u_unit = u;
+		v_unit = v;
 	}
 
-	void look_dir(vec3 cam_origin, vec3 front_dir, vec3 up, float yfov, float aspect_ratio)
+	void look_dir(vec3 cam_origin, vec3 front_dir, vec3 up, float yfov, float aspect_ratio, float aperature, float focus_dist)
 	{
 		float theta = radians(yfov);
 		float h = tan(theta / 2);
@@ -318,11 +362,15 @@ struct Camera
 		vec3 v = normalize(cross(w, u));
 
 		origin = cam_origin;
-		horizontal = view_width * u;
-		vertical = view_height * v;
+		horizontal = view_width * u * focus_dist;
+		vertical = view_height * v * focus_dist;
 		front = w;
 
-		lower_left = origin - horizontal / 2 - vertical / 2 - front;
+		lower_left = origin - horizontal / 2 - vertical / 2 - front*(focus_dist);
+
+		lens_radius = aperature / 2.f;
+		u_unit = u;
+		v_unit = v;
 	}
 
 	vec3 origin;
@@ -333,6 +381,11 @@ struct Camera
 	vec3 horizontal;
 	vec3 vertical;
 	vec3 lower_left;
+
+	vec3 u_unit;	// unit vectors for horizontal and vertical
+	vec3 v_unit;
+
+	float lens_radius;
 };
 
 vec3 ray_color(Ray r, Scene& world, int depth)
@@ -345,37 +398,70 @@ vec3 ray_color(Ray r, Scene& world, int depth)
 	if (world.trace_scene(r, 0, 1000, &trace)) {
 		Ray scattered_ray;
 		vec3 attenuation;
+		vec3 emitted = trace.mat_ptr->get_emitted();
 		/*
 		vec3 target = trace.point + trace.normal + random_unit_vector();
 		return 0.5 * ray_color(Ray(trace.point+trace.normal*0.001f, normalize(target - trace.point)), world, depth - 1);
 		*/
 		if (trace.mat_ptr->scatter(r, trace, attenuation, scattered_ray))
-			return attenuation * ray_color(scattered_ray, world, depth - 1);
-		return vec3(0);
+			return emitted + attenuation * ray_color(scattered_ray, world, depth - 1);
+		return emitted;
 
 	}
 	float t = 0.5 * (r.dir.y + 1.0);
 	return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
 
+void random_scene(Scene* world)
+{
+	world->spheres.push_back(Sphere(vec3(0, -1000, 0), 1000));
+	for (int i = -11; i < 11; i++) {
+		for (int j = -11; j < 11; j++) {
+			float rand_mat = random_float();
+			vec3 center = vec3(i + 0.9 * random_float(), 0.2, j + 0.9 * random_float());
+			if ((center - vec3(4, 0.2, 0)).length() <= 0.9)
+				continue;
+
+			if (rand_mat < 0.8) {
+				world->spheres.push_back(Sphere(center, 0.2, Material::make_lambertian(random_vec3(0, 1) * random_vec3(0, 1))));
+			}
+			else if (rand_mat < 0.95) {
+				world->spheres.push_back(Sphere(center, 0.2, Material::make_metal(random_vec3(0.5, 1.0))));
+			}
+			else {
+				world->spheres.push_back(Sphere(center, 0.2, Material::make_dielectric(1.5)));
+			}
+		}
+	}
+
+	world->spheres.push_back(Sphere(vec3(0, 1, 0), 1.0, Material::make_dielectric(1.5)));
+	world->spheres.push_back(Sphere(vec3(-4, 1, 0), 1.0, Material::make_lambertian(vec3(0.4,0.2,0.1))));
+	world->spheres.push_back(Sphere(vec3(4, 1, 0), 1.0, Material::make_metal(vec3(0.7,0.6,0.5))));
+}
+
 int main()
 {
 	srand(time(NULL));
 
-	buffer = new u8[WIDTH * HEIGHT * 3];
+	buffer[0] = new u8[WIDTH * HEIGHT * 3];
+	buffer[1] = new u8[WIDTH * HEIGHT * 3];
+
 	
 	Scene world;
-	//Camera cam;
-	Camera cam (CAM_POS, CAM_POS+vec3(0,0,-1), vec3(0, 1, 0), 45, ARATIO);
-	cam.look_dir(vec3(0,0,0.3),vec3(0,0,-1), vec3(0, 1, 0), 45, ARATIO);
-
-	world.spheres.push_back(Sphere(vec3(0.15, -0.3, -0.55), 0.18, Material::make_metal(vec3(1))));
-
-
+//	Camera cam;
+	Camera cam (vec3(-1, 2.0, 3.0), vec3(0), vec3(0, 1, 0), 40, ARATIO,0.05,5.0);
+	//cam.look_dir(vec3(0,0,1.0),vec3(0,0,-1), vec3(0, 1, 0), 45, ARATIO,2.0,3.0);
+	
+	world.spheres.push_back(Sphere(vec3(0.15, -0.3, -0.2), 0.18, Material::make_metal(vec3(1))));
+	
+	
 	world.spheres.push_back(Sphere( vec3(0, 0, -1), 0.5, Material::make_metal(vec3(0.2,0.2,1.0)) ));
 	world.spheres.push_back(Sphere( vec3(1, -0.3, -1), 0.25, Material::make_lambertian(vec3(0.8,0.2,0.2)) ));
 	world.spheres.push_back(Sphere(vec3(-0.4, -0.25, -0.5), 0.25, Material::make_dielectric(1.5)));
 	world.spheres.push_back(Sphere(vec3(0, -100.5, -1), 100));
+
+	//Camera cam(vec3(12, 2, 3), vec3(0), vec3(0, 1, 0), 20, ARATIO,0.1,10.0);
+	//random_scene(&world);
 
 	printf("Starting: ");
 	float complete = 0.0;
@@ -387,19 +473,45 @@ int main()
 		}
 		for (int x = 0; x < WIDTH; x++) {
 			vec3 total = vec3(0.0);
+			
+			// Variance calculation
+			int count;	// count
+			vec3 mean = vec3(0);
+			float mean_dist2 = 0;
+			float variance;
+
+			vec3 delta;
+
 			for (int s = 0; s < SAMPLES_PER_PIXEL; s++) {
+				count = s + 1;
+
 				float u = float(x+random_float()) / (WIDTH - 1);
 				float v = float(y+random_float()) / (HEIGHT - 1);
-				total += ray_color(cam.get_ray(u, v), world,MAX_DEPTH);
+				Ray r = cam.get_ray(u, v);
+				vec3 sample = ray_color(r, world,MAX_DEPTH);
+				total += sample;
+
+
+				delta = sample - mean;
+				mean += delta / (float)count;
+				mean_dist2 += dot(delta, delta) * (s>0);
+				variance = mean_dist2 / (count - 1);
+
 			}
-			write_out(total, x, (HEIGHT-1)-y);
+			write_out(total, x, (HEIGHT-1)-y, count);
+			write_out_no_scale(vec3(variance), x, (HEIGHT - 1) - y);
 		}
 	}
 	printf("DONE\n");
 
-	stbi_write_bmp(OUTPUT_NAME, WIDTH, HEIGHT,3, buffer);
-	printf("Output written: %s\n", OUTPUT_NAME);
+	stbi_write_bmp(OUTPUT_NAME[0], WIDTH, HEIGHT,3, buffer[0]);
 
-	delete[] buffer;
+	stbi_write_bmp(OUTPUT_NAME[1], WIDTH, HEIGHT, 3, buffer[1]);
+
+
+	printf("Output written: %s\n", OUTPUT_NAME[0]);
+
+	delete[] buffer[0];
+	delete[] buffer[1];
 	return 0;
 }

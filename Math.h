@@ -100,6 +100,39 @@ inline vec3 normalize(vec3 v)
 	return v / v.length();
 }
 
+
+
+struct Ray
+{
+	Ray() : pos(vec3(0)), dir(vec3(1, 0, 0)) {}
+	Ray(vec3 pos, vec3 dir) :pos(pos), dir(dir) {}
+
+	vec3 at(float t) const {
+		return pos + dir * t;
+	}
+
+	vec3 pos;
+	vec3 dir;
+};
+
+bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, float tmax)
+{
+	for (int a = 0; a < 3; a++) {
+		float t0 = fmin((bmin[a] - r.pos[a]) / r.dir[a],
+						(bmax[a]-r.pos[a])/r.dir[a]);
+		float t1 = fmax((bmin[a] - r.pos[a]) / r.dir[a],
+			(bmax[a] - r.pos[a]) / r.dir[a]);
+		tmin = fmax(t0, tmin);
+		tmax = fmin(t1, tmax);
+		if (tmax <= tmin)
+			return false;
+	}
+	return true;
+}
+
+
+
+
 struct mat4
 {
 	float m[16];
