@@ -74,4 +74,18 @@ inline vec3 abs(vec3 V)
 	return vec3(fabs(V.x), fabs(V.y), fabs(V.z));
 }
 
+inline bool quadratic(float a, float b, float c, float& t0, float& t1)
+{
+	float discrim = b * b - 4 * a * c;
+	if (discrim < 0)
+		return false;
+	float sqrtdist = sqrt(discrim);
+	t0 = (-b - sqrtdist) / (2*a);
+	t1 = (-b + sqrtdist) / (2*a);
+
+	if (t1 < t0)
+		std::swap(t0, t1);
+	return true;
+}
+
 #endif // !UTILS_H

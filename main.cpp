@@ -5,6 +5,7 @@
 #include <thread>
 #include <mutex>
 #include "Math.h"
+#include "Utils.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -20,7 +21,6 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const float PI = 3.14159;
 const int SAMPLES_PER_PIXEL = 200;
 const int MAX_DEPTH = 50;
 const float GAMMA = 2.2;
@@ -28,74 +28,6 @@ const float GAMMA = 2.2;
 
 const char* OUTPUT_NAME[2] = { "Output.bmp","Output2.bmp" };
 
-float radians(float degrees)
-{
-	return degrees * (PI / 180.f);
-}
-
-float random_float()
-{
-	return rand() / (RAND_MAX + 1.0);
-}
-
-float random_float(float min, float max)
-{
-	return min + (max - min) * random_float();
-}
-float clamp(float x, float min, float max) 
-{
-	return (x < min) ? min : ((x > max) ? max : x);
-}
-vec3 random_vec3(float min, float max)
-{
-	return vec3(random_float(min,max), random_float(min,max), random_float(min,max));
-}
-vec3 random_in_unit_sphere()
-{
-	while (1) {
-		vec3 p = random_vec3(-1, 1);
-		if (p.length_squared() >= 1) continue;
-		return p;
-	}
-}
-vec3 random_unit_vector()
-{
-	return normalize(random_in_unit_sphere());
-}
-
-vec3 random_in_unit_disk()
-{
-	while (1) {
-		vec3 p = vec3(random_float(-1, 1), random_float(-1, 1), 0);
-		if (p.length_squared() >= 1) continue;
-		return p;
-	}
-}
-vec3 reflect(vec3 v, vec3 n)
-{
-	return v - 2 * dot(v, n) * n;
-}
-vec3 refract(vec3 uv, vec3 n, float etai_over_etat)
-{
-	float theta = fmin(dot(-uv, n),1.0);
-	vec3 r_out_perp = etai_over_etat * (uv + theta * n);
-	vec3 r_out_parallel = -sqrt(fabs(1.0 - r_out_perp.length_squared())) * n;
-	return r_out_perp + r_out_parallel;
-}
-float reflectance(float cosine, float ref_idx)
-{
-	float r0 = (1 - ref_idx) / (1 + ref_idx);
-	r0 = r0 * r0;
-	return r0 + (1 - r0) * pow((1 - cosine), 5);
-}
-vec3 pow(vec3 V, float e)
-{
-	return vec3(pow(V.x, e), pow(V.y, e), pow(V.z, e));
-}
-vec3 abs(vec3 V)
-{
-	return vec3(fabs(V.x), fabs(V.y), fabs(V.z));
-}
 
 u8* buffer[2] = { nullptr,nullptr };
 void write_out(vec3 color, int x, int y, int samples, int file = 0) {
@@ -168,9 +100,9 @@ private:
 class CheckeredTexture : public Texture
 {
 public:
-	CheckeredTexture(vec3 even, vec3 odd, float grid = 0.25f) : even(even), odd(odd),repeat(grid),mod(grid*2.f) {}
+	CheckeredTexture(vec3 even, vec3 odd, float grid = 0.25f) : even(even), odd(odd),grid(PI/grid) {}
 	virtual vec3 sample(float u, float v, vec3 p) const override {
-		float sines = sin(10 * p.x)* sin(10 * p.y)* sin(10 * p.z);
+		float sines = sin(grid * p.x)* sin(grid * p.y)* sin(grid * p.z);
 		//uint8_t res = (fmod(fmod(p.x, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.y, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.z, mod)+mod,mod) < repeat);
 		if (sines < 0)
 			return odd;
@@ -179,8 +111,7 @@ public:
 
 private:
 	vec3 even, odd;
-	float repeat = 1.f;
-	float mod = 2.f;
+	float grid;
 };
 
 class Material
@@ -322,8 +253,8 @@ public:
 		N = normal;
 		T = tangent;
 		B = normalize(cross(N, T));
-		u = u_length;
-		v = v_length;
+		u = u_length/2;
+		v = v_length/2;
 	}
 	Rectangle(vec3 normal, float u_length, float v_length) {
 		N = normal;
@@ -332,8 +263,8 @@ public:
 		else if (N.y > 0.999) up = vec3(0, 0, -1);
 		T = normalize(cross(up, N));
 		B = normalize(cross(N, T));
-		u = u_length;
-		v = v_length;
+		u = u_length/2;
+		v = v_length/2;
 	}
 	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
 		// Intersect plane
@@ -349,10 +280,10 @@ public:
 		vec3 plane_intersect = r.pos + r.dir * t;
 		// Check if its within normals
 		float u_dist = dot(plane_intersect, T);
-		if (u_dist < 0 || u_dist > u)
+		if (u_dist < -u || u_dist > u)
 			return false;
 		float v_dist = dot(plane_intersect, B);
-		if (v_dist < 0 || v_dist > v)
+		if (v_dist < -v || v_dist > v)
 			return false;
 
 		// Ray intersects plane
@@ -366,8 +297,41 @@ public:
 
 private:
 	vec3 N,T,B;// normal, tangent, bitangent
-	float u, v;	// side lengths
+	float u, v;	// half side lengths
 };
+
+class Disk : public Geometry
+{
+public:
+	Disk(vec3 normal, float radius) : normal(normal), radius(radius) {}
+	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+		// Intersect plane
+		float denom = dot(normal, r.dir);
+		if (fabs(denom) < 0.01)	// parallel
+			return false;
+		float dist = dot(r.pos, normal);
+		float t = -dist / denom;
+
+		if (t<tmin || t>tmax)
+			return false;
+
+		vec3 plane_intersect = r.pos + r.dir * t;
+		
+		float dist_radius = plane_intersect.length();
+		if (dist_radius > radius)
+			return false;
+
+		si->point = plane_intersect;
+		si->set_face_normal(r, normal);
+		si->t = t;
+		return true;
+	}
+
+private:
+	vec3 normal;
+	float radius;
+};
+
 class Box : public Geometry
 {
 public:
@@ -412,6 +376,42 @@ public:
 private:
 	vec3 bmin, bmax;
 };
+
+class Cylinder : public Geometry
+{
+public:
+	Cylinder(float radius, float height) : radius(radius), ymin(height / -2.f), ymax(height / 2.f) {}
+
+	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+		float a = r.dir.x * r.dir.x + r.dir.z * r.dir.z;
+		float b = 2 * (r.pos.x * r.dir.x + r.pos.z * r.dir.z);
+		float c = r.pos.x * r.pos.x + r.pos.z * r.pos.z - radius*radius;
+		float t0, t1;
+		if (!quadratic(a, b, c, t0, t1))
+			return false;
+		if (t0 > tmax || t1 < tmin)
+			return false;
+		float root = t0;
+		if (root <= 0) {
+			root = t1;
+			if (root > tmax)
+				return false;
+		}
+	
+		vec3 point = r.pos + r.dir * root;
+		if (point.y<ymin || point.y>ymax)
+			return false;
+		vec3 normal = vec3(point.x,0,point.z)/radius;
+		si->point = point;
+		si->set_face_normal(r, normal);
+		si->t = root;
+		return true;
+	}
+private:
+	float radius;
+	float ymin, ymax;
+};
+
 
 class TriangleMesh : public Geometry
 {
@@ -646,11 +646,14 @@ void cornell_box_scene(Scene& world)
 		*/
 
 	world.instances.push_back(Instance(
-		new Rectangle(vec3(0, -1, 0), 0.25, 0.25),
+
+		new Disk(vec3(0, -1, 0), 0.25),
+		//new Rectangle(vec3(0, -1, 0), 0.25,0.25),
+		
 		new EmissiveMaterial(
 			vec3(4)
 		),
-		vec3(0.375, 0.99, -0.375)));
+		vec3(0.5, 0.99, -0.5)));
 
 
 	world.instances.push_back(Instance(
@@ -658,42 +661,56 @@ void cornell_box_scene(Scene& world)
 		new MatteMaterial(
 			new ConstantTexture(vec3(0.8))
 		),
-		vec3(0, 1, 0)));
+		vec3(0.5, 1, -0.5)));
 
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, 1, 0), 1, 1),
 		new MatteMaterial(
 			new ConstantTexture(vec3(0.8))
 		),
-		vec3(0, 0, 0)));
+		vec3(0.5, 0, -0.5)));
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, 0, 1), 1, 1),
 		new MatteMaterial(
 			new ConstantTexture(vec3(0.8))
 		),
-		vec3(0, 0, -1)));
+		vec3(0.5, 0.5, -1)));
 
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(1, 0, 0), 1, 1),
 		new MatteMaterial(
 			new ConstantTexture(vec3(0.9, 0, 0))
 		),
-		vec3(0, 0, 0)));
+		vec3(0, 0.5, -0.5)));
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(-1, 0, 0), 1, 1),
 		new MatteMaterial(
 			new ConstantTexture(vec3(0, 0.9, 0))
 		),
-		vec3(1, 0, -1)));
+		vec3(1, 0.5, -0.5)));
 
 
+	//world.instances.push_back(Instance(
+	//	new Box(vec3(0.3,0.6,0.5)),
+		//new Cylinder(0.2,0.4),
+
+		//new MatteMaterial(
+		//	new ConstantTexture(0.8)),
+	//	new MetalMaterial(vec3(0.8),0.6),
+	//	vec3(0.5, 0.3, -0.5)
+
+	//));
 	world.instances.push_back(Instance(
-		new Box(vec3(0.3)),
-		new MatteMaterial(
-			new ConstantTexture(0.8)),
-		vec3(0.5, 0.5, -0.5)
+		new Sphere(0.25),
+		//new Cylinder(0.2,0.4),
+
+		//new MatteMaterial(
+		//	new ConstantTexture(0.8)),
+		new GlassMaterial(2.0),
+		vec3(0.5, 0.4, -0.5)
 
 	));
+
 
 }
 
@@ -701,7 +718,11 @@ void checker_scene(Scene& world, Camera& cam)
 {
 	world.instances.push_back(Instance(new Sphere(0.18), new MetalMaterial(vec3(1)), vec3(0.15, -0.3, -0.2)));
 	
-	world.instances.push_back(Instance(new Sphere(0.5), new MetalMaterial(vec3(0.2, 0.2, 1.0)), vec3(0, 0, -1)));
+	world.instances.push_back(Instance(
+		new Sphere(0.5), 
+		//new Cylinder(0.25,0.5),
+		new MetalMaterial(vec3(0.2, 0.2, 1.0)), 
+		vec3(0, 0, -1)));
 
 	world.instances.push_back(Instance(
 		new Sphere(0.25),
@@ -718,15 +739,18 @@ void checker_scene(Scene& world, Camera& cam)
 		vec3(0, -100.5, -1)));
 
 	world.instances.push_back(Instance(
-		new Box(vec3(0.3)),
-		new MatteMaterial(
-			new ConstantTexture(0.5)),
+		new Box(vec3(2.0,0.3,0.5)),
+		new EmissiveMaterial(vec3(2.0,0.6,0)),
 		vec3(0, 0.5, 0.5)
 
 	));
+	world.instances.push_back(Instance(
+		new Cylinder(0.25,0.5), 
+		new GlassMaterial(1.5f), 
+		vec3(-1.4, -0.25, -1.0)));
 
 	world.background_color = vec3(0.5, 0.7, 1.0);
-	cam = Camera(vec3(-1, 1.0, 2.0), vec3(0.0, 0.0, 0), vec3(0, 1, 0), 40, ARATIO, 0.01, 4.0);
+	cam = Camera(vec3(1.0, 1.0, 5.0), vec3(0.0, 0.0, 0), vec3(0, 1, 0), 40, ARATIO, 0.01, 4.0);
 }
 
 struct ThreadState
@@ -802,7 +826,7 @@ int main()
 	
 	Scene world;
 //	Camera cam;
-	Camera cam (vec3(0.85,0.7, 1.5), vec3(0.5,0.5,0), vec3(0, 1, 0), 45, ARATIO,0.01,4.0);
+	Camera cam (vec3(0.15,0.7, 1.5), vec3(0.5,0.5,0), vec3(0, 1, 0), 45, ARATIO,0.01,4.0);
 	cornell_box_scene(world);
 	//checker_scene(world, cam);
 
