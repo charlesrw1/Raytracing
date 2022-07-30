@@ -18,7 +18,7 @@ const float NEAR = 1.0;
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
 const float PI = 3.14159;
-const int SAMPLES_PER_PIXEL = 50;
+const int SAMPLES_PER_PIXEL = 100;
 const int MAX_DEPTH = 50;
 const float GAMMA = 2.2;
 
@@ -105,7 +105,6 @@ void write_out(vec3 color, int x, int y, int samples, int file = 0) {
 	color.z = pow(color.z, 1 / GAMMA);
 
 
-
 	int idx = y * WIDTH * 3 + x * 3;
 	buffer[file][idx] = clamp(color.x,0,1) * 255;
 	buffer[file][idx+1] = clamp(color.y,0,1)* 255;
@@ -119,152 +118,177 @@ void write_out_no_scale(vec3 color, int x, int y, int file = 1)
 	buffer[file][idx + 1] = clamp(color.y, 0, 1) * 255;
 	buffer[file][idx + 2] = clamp(color.z, 0, 1) * 255;
 }
-
-struct Material;
-struct Trace
+class Material;
+struct SurfaceInteraction
 {
-	const Material* mat_ptr = nullptr;
-
+	SurfaceInteraction() {}
+	SurfaceInteraction(vec3 point, Ray r, vec3 outward_normal, const Material* material) 
+		: point(point), w0(-r.dir), material(material)
+	{
+		front_face = dot(r.dir, outward_normal) < 0;
+		normal = (front_face) ? outward_normal : -outward_normal;
+	}
 	vec3 point;
 	vec3 normal;
+	vec3 w0;		// -(incoming ray dir)
 	float t;
 	bool front_face;
 
-	void set_face_normal(Ray r, vec3 outward) {
-		front_face = dot(r.dir, outward) < 0;
-		normal = (front_face) ? outward : -outward;
-	}
+	float u=0, v=0;	// texture coordinates
+
+	 const Material* material = nullptr;
+
+	 void set_face_normal(Ray r, vec3 outward) {
+		 front_face = dot(r.dir, outward) < 0;
+		 normal = (front_face) ? outward : -outward;
+	 }
 };
 
-enum MaterialType
+class Texture
 {
-	LAMBERTIAN,
-	METAL,
-	DIELECTRIC,
-	EMIT,
+public:
+	virtual ~Texture() {}
+	virtual vec3 sample(float u, float v, vec3 point) const = 0;
 };
-struct Material
+class ConstantTexture : public Texture
 {
-	Material() {
-		type = LAMBERTIAN;
-		lambertian.albedo = vec3(0.5);
+public:
+	ConstantTexture(vec3 color) : color(color) {}
+	ConstantTexture(float r, float g, float b) : color(vec3(r, g, b)) {}
+	ConstantTexture(float rgb) : color(vec3(rgb)) {}
+	virtual vec3 sample(float u, float v, vec3 point) const override {
+		return color;
+	}
+private:
+	vec3 color;
+};
+class CheckeredTexture : public Texture
+{
+public:
+	CheckeredTexture(vec3 even, vec3 odd, float grid = 0.25f) : even(even), odd(odd),repeat(grid),mod(grid*2.f) {}
+	virtual vec3 sample(float u, float v, vec3 p) const override {
+		float sines = sin(10 * p.x)* sin(10 * p.y)* sin(10 * p.z);
+		//uint8_t res = (fmod(fmod(p.x, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.y, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.z, mod)+mod,mod) < repeat);
+		if (sines < 0)
+			return odd;
+		return even;
 	}
 
-	static Material make_lambertian(vec3 albedo) {
-		Material m;
-		m.type = LAMBERTIAN;
-		m.lambertian.albedo = albedo;
-		return m;
-	}
-	static Material make_metal(vec3 albedo, float fuzz = 0.f) {
-		Material m;
-		m.type = METAL;
-		m.metal.albedo = albedo;
-		m.metal.fuzz = fuzz;
-		return m;
-	}
-	static Material make_dielectric(float index) {
-		Material m;
-		m.type = DIELECTRIC;
-		m.dielectric.index_r = index;
-		return m;
-	}
-	static Material make_light(vec3 emit_color) {
-		Material m;
-		m.type = EMIT;
-		m.emitted = emit_color;
-		return m;
-	}
-
-	MaterialType type;
-	union {
-		struct {
-			vec3 albedo;
-		}lambertian;
-		struct {
-			vec3 albedo;
-			float fuzz;
-		}metal;
-		struct {
-			float index_r;
-		}dielectric;
-	};
-	vec3 emitted = vec3(0.0);
-
-	vec3 get_emitted() const {
-		return emitted;
-	}
-
-
-	bool scatter(Ray& ray_in, Trace& res, vec3& atteunuation, Ray& scattered_ray) const {
-		switch (type)
-		{
-		case LAMBERTIAN:
-		{
-			vec3 scatter_dir = res.normal + random_unit_vector();
-
-			if (scatter_dir.near_zero())
-				scatter_dir = res.normal;
-
-			scattered_ray = Ray(res.point + res.normal * 0.001f, normalize(scatter_dir));
-			atteunuation = lambertian.albedo;
-			return true;
-		}break;
-		case METAL:
-		{
-			vec3 reflected = reflect(ray_in.dir, res.normal);
-			scattered_ray = Ray(res.point + res.normal * 0.001f, normalize(reflected + metal.fuzz*random_in_unit_sphere()));
-			atteunuation = metal.albedo;
-			return (dot(scattered_ray.dir, res.normal) > 0);
-		}break;
-
-		case DIELECTRIC:
-		{
-			atteunuation = vec3(1);
-			float refrac_ratio = (res.front_face) ? (1.0 / dielectric.index_r) : dielectric.index_r;
-
-			float cos_theta = fmin(dot(-ray_in.dir, res.normal), 1.0);
-			float sin_theta = sqrt(1.f - cos_theta * cos_theta);
-
-			bool cant_refract = refrac_ratio * sin_theta > 1.f;
-			vec3 direction;
-			if (cant_refract)
-				direction = reflect(ray_in.dir, res.normal);
-			else
-				direction = refract(ray_in.dir, res.normal, refrac_ratio);
-
-			//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
-			scattered_ray = Ray(res.point + res.normal * ((cant_refract) ? 0.001f:-0.001f), normalize(direction));
-			return true;
-
-		}break;
-
-		default:
-			return false;
-		}
-	}
+private:
+	vec3 even, odd;
+	float repeat = 1.f;
+	float mod = 2.f;
 };
 
-struct BVHNode
+class Material
 {
+public:
+	virtual ~Material() {}
+	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const {
+		return false;
+	}
+	virtual vec3 emitted() const {
+		return vec3(0);
+	}
+};
+class MatteMaterial : public Material
+{
+public:
+	MatteMaterial(Texture* albedo) : albedo(albedo) {}
+	~MatteMaterial() {
+		delete albedo;
+	}
+	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
+	{
+		vec3 scatter_dir = SI->normal + random_unit_vector();
 
+		if (scatter_dir.near_zero())
+			scatter_dir = SI->normal;
+
+		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(scatter_dir));
+		attenuation = albedo->sample(SI->u,SI->v,SI->point);
+		return true;
+	}
+private:
+	Texture* albedo;
+};
+
+class MetalMaterial : public Material
+{
+public:
+	MetalMaterial(vec3 albedo, float fuzz=0.f) : albedo(albedo), fuzz(fuzz) {}
+	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
+	{
+		vec3 reflected = reflect(-SI->w0, SI->normal);
+		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(reflected + fuzz * random_in_unit_sphere()));
+		attenuation = albedo;
+		return (dot(scattered.dir, SI->normal) > 0);
+	}
+
+private:
+	vec3 albedo;
+	float fuzz;
+};
+
+class GlassMaterial : public Material
+{
+public:
+	GlassMaterial(float index_refraction) : index_r(index_refraction) {}
+	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
+	{
+		attenuation = vec3(1);
+		float refrac_ratio = (SI->front_face) ? (1.0 / index_r) : index_r;
+
+		float cos_theta = fmin(dot(SI->w0, SI->normal), 1.0);
+		float sin_theta = sqrt(1.f - cos_theta * cos_theta);
+
+		bool cant_refract = refrac_ratio * sin_theta > 1.f;
+		vec3 direction;
+		if (cant_refract)
+			direction = reflect(-SI->w0, SI->normal);
+		else
+			direction = refract(-SI->w0, SI->normal, refrac_ratio);
+
+		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
+		scattered = Ray(SI->point + SI->normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
+		return true;
+	}
+private:
+	float index_r;
+};
+class EmissiveMaterial : public Material
+{
+public: 
+	EmissiveMaterial(vec3 emissive_color) : emit(emissive_color) {}
+	virtual vec3 emitted() const override {
+		return emit;
+	}
+
+private:
+	vec3 emit;
 };
 
 
-class BVH
+class Geometry
 {
+public:
+	virtual ~Geometry() {}
+	//virtual Bounds object_bounds() const = 0;
+	//virtual Bounds world_bounds() const;
+	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const = 0;
+//	virtual float area() const = 0;
 
 };
 
-
-
-struct Sphere
+class Sphere : public Geometry
 {
-	Sphere() {}
-	Sphere(vec3 center, float radius) : center(center), radius(radius) {}
-	Sphere(vec3 center, float radius, Material mat) : center(center), radius(radius), mat(mat) {}
+public:
+	Sphere(float radius)
+		: radius(radius) {}
 
-	bool hit(Ray r, float tmin, float tmax, Trace* res)const {
+	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+		vec3 center = vec3(0);
+		
 		vec3 oc = r.pos - center;
 		float a = dot(r.dir, r.dir);
 		float halfb = dot(oc, r.dir);
@@ -279,36 +303,132 @@ struct Sphere
 			if (root<tmin || root>tmax)
 				return false;
 		}
-		res->t = root;
-		res->point = r.at(root);
-		res->set_face_normal(r, (res->point - center) / radius);
-		res->mat_ptr = &mat;
+		si->t = root;
+		si->point = r.at(root);
+		si->set_face_normal(r, (si->point - center) / radius);
 		return true;
 	}
 
-
-	vec3 center;
+private:
 	float radius;
-
-	Material mat;
 };
+class Rectangle : public Geometry
+{
+public:
+	Rectangle(vec3 normal, vec3 tangent, float u_length, float v_length) {
+		N = normal;
+		T = tangent;
+		B = normalize(cross(N, T));
+		u = u_length;
+		v = v_length;
+	}
+	Rectangle(vec3 normal, float u_length, float v_length) {
+		N = normal;
+		vec3 up = vec3(0, 1, 0);
+		if (N.y < -0.999) up = vec3(1, 0, 0);
+		else if (N.y > 0.999) up = vec3(0, 0, -1);
+		T = normalize(cross(up, N));
+		B = normalize(cross(N, T));
+		u = u_length;
+		v = v_length;
+	}
+	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+		// Intersect plane
+		float denom = dot(N, r.dir);
+		if (fabs(denom) < 0.01)	// parallel
+			return false;
+		float dist = dot(r.pos, N);
+		float t = -dist / denom;
+		
+		if (t<tmin || t>tmax)
+			return false;
+
+		vec3 plane_intersect = r.pos + r.dir * t;
+		// Check if its within normals
+		float u_dist = dot(plane_intersect, T);
+		if (u_dist < 0 || u_dist > u)
+			return false;
+		float v_dist = dot(plane_intersect, B);
+		if (v_dist < 0 || v_dist > v)
+			return false;
+
+		// Ray intersects plane
+		si->point = plane_intersect;
+		si->set_face_normal(r, N);
+		si->u = u_dist / u;
+		si->v = v_dist / v;
+		si->t = t;
+		return true;
+	}
+
+private:
+	vec3 N,T,B;// normal, tangent, bitangent
+	float u, v;	// side lengths
+
+};
+class TriangleMesh : public Geometry
+{
+public:
+
+private:
+	// BVH for triangles
+	// triangle list
+};
+
+class Instance
+{
+public:
+	Instance(Geometry* geo, Material* mat, vec3 offset) : geometry(geo), material(mat), offset(offset) {}
+
+	void free_data() {
+		delete geometry;
+		delete material;
+	}
+
+	bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const {
+		// Transform ray to model space
+		r.pos = r.pos - offset;
+		si->material = material;
+		bool result = geometry->intersect(r, tmin, tmax, si);
+		si->point += offset;
+		return result;
+	}
+private:
+	Geometry* geometry = nullptr;
+	Material* material = nullptr;
+	//mat4 object_to_world;
+	//mat4 world_to_object;
+
+	vec3 offset;	// temporary transform
+};
+
 
 struct Scene
 {
-	bool trace_scene(Ray r,float tmin,float tmax, Trace* res) {
-		Trace temp;
+	~Scene() {
+		for (int i = 0; i < instances.size(); i++)
+			instances[i].free_data();
+	}
+
+	bool trace_scene(Ray r,float tmin,float tmax, SurfaceInteraction* res) {
+		//Trace temp;
+		SurfaceInteraction temp;
 		bool hit = false;
 		float closest_so_far = tmax;
-		for (const auto& obj : spheres) {
-			if (obj.hit(r, tmin, closest_so_far, &temp)) {
+		for (const auto& obj : instances) {
+			if (obj.intersect(r, tmin, closest_so_far, &temp)) {
 				hit = true;
 				closest_so_far = temp.t;
 				*res = temp;
 			}
 		}
+		res->w0 = -r.dir;
 		return hit;
 	}
-	std::vector<Sphere> spheres;
+
+	std::vector<Instance> instances;
+	vec3 background_color = vec3(0);
+
 };
 
 struct Camera
@@ -390,28 +510,30 @@ struct Camera
 
 vec3 ray_color(Ray r, Scene& world, int depth)
 {
-	Trace trace;
+	SurfaceInteraction si;
 	
 	if (depth <= 0)
 		return vec3(0);
 	
-	if (world.trace_scene(r, 0, 1000, &trace)) {
+	if (world.trace_scene(r, 0, 1000, &si)) {
 		Ray scattered_ray;
 		vec3 attenuation;
-		vec3 emitted = trace.mat_ptr->get_emitted();
+		vec3 emitted = si.material->emitted();
 		/*
 		vec3 target = trace.point + trace.normal + random_unit_vector();
 		return 0.5 * ray_color(Ray(trace.point+trace.normal*0.001f, normalize(target - trace.point)), world, depth - 1);
 		*/
-		if (trace.mat_ptr->scatter(r, trace, attenuation, scattered_ray))
+		if (si.material->scatter(&si, attenuation, scattered_ray))
 			return emitted + attenuation * ray_color(scattered_ray, world, depth - 1);
 		return emitted;
 
 	}
-	float t = 0.5 * (r.dir.y + 1.0);
-	return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
-}
+	return world.background_color;
 
+	//float t = 0.5 * (r.dir.y + 1.0);
+	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
+}
+/*
 void random_scene(Scene* world)
 {
 	world->spheres.push_back(Sphere(vec3(0, -1000, 0), 1000));
@@ -438,6 +560,48 @@ void random_scene(Scene* world)
 	world->spheres.push_back(Sphere(vec3(-4, 1, 0), 1.0, Material::make_lambertian(vec3(0.4,0.2,0.1))));
 	world->spheres.push_back(Sphere(vec3(4, 1, 0), 1.0, Material::make_metal(vec3(0.7,0.6,0.5))));
 }
+*/
+void cornell_box_scene(Scene& world)
+{
+	world.instances.push_back(Instance(
+		new Sphere(0.15),
+		new EmissiveMaterial(
+			vec3(2)
+		),
+		vec3(0.5, 0.5,-0.5)));
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(0, -1, 0), 1, 1),
+		new MatteMaterial(
+			new ConstantTexture(vec3(0.8))
+		),
+		vec3(0, 1, 0)));
+
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(0, 1, 0), 1, 1),
+		new MatteMaterial(
+			new ConstantTexture(vec3(0.8))
+		),
+		vec3(0, 0, 0)));
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(0, 0, 1), 1, 1),
+		new MatteMaterial(
+			new ConstantTexture(vec3(0.8))
+		),
+		vec3(0, 0, -1)));
+
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(1, 0, 0), 1, 1),
+		new MatteMaterial(
+			new ConstantTexture(vec3(0.9, 0, 0))
+		),
+		vec3(0, 0, 0)));
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(-1, 0, 0), 1, 1),
+		new MatteMaterial(
+			new ConstantTexture(vec3(0, 0.9, 0))
+		),
+		vec3(1, 0, -1)));
+}
 
 int main()
 {
@@ -449,16 +613,43 @@ int main()
 	
 	Scene world;
 //	Camera cam;
-	Camera cam (vec3(-1, 2.0, 3.0), vec3(0), vec3(0, 1, 0), 40, ARATIO,0.05,5.0);
+	Camera cam (vec3(0.5,0.5, 1.5), vec3(0.5,0.5,0), vec3(0, 1, 0), 45, ARATIO,0.01,4.0);
 	//cam.look_dir(vec3(0,0,1.0),vec3(0,0,-1), vec3(0, 1, 0), 45, ARATIO,2.0,3.0);
-	
-	world.spheres.push_back(Sphere(vec3(0.15, -0.3, -0.2), 0.18, Material::make_metal(vec3(1))));
-	
-	
-	world.spheres.push_back(Sphere( vec3(0, 0, -1), 0.5, Material::make_metal(vec3(0.2,0.2,1.0)) ));
-	world.spheres.push_back(Sphere( vec3(1, -0.3, -1), 0.25, Material::make_lambertian(vec3(0.8,0.2,0.2)) ));
-	world.spheres.push_back(Sphere(vec3(-0.4, -0.25, -0.5), 0.25, Material::make_dielectric(1.5)));
-	world.spheres.push_back(Sphere(vec3(0, -100.5, -1), 100));
+	/*
+	world.instances.push_back(Instance(
+		new Rectangle(
+			normalize(vec3(-0.8, 0.5, 0.4)), 1, 1),
+		new MatteMaterial(
+			new ConstantTexture(vec3(1, 1, 0))
+		),
+		vec3(0, 0, -2)
+	));
+
+	world.instances.push_back(Instance(new Sphere(0.18), new MetalMaterial(vec3(1)), vec3(0.15, -0.3, -0.2)));
+	//world.spheres.push_back(Sphere(vec3(0.15, -0.3, -0.2), 0.18, Material::make_metal(vec3(1))));
+	//
+	//
+	//world.spheres.push_back(Sphere( vec3(0, 0, -1), 0.5, Material::make_metal(vec3(0.2,0.2,1.0)) ));
+	world.instances.push_back(Instance(new Sphere(0.5), new MetalMaterial(vec3(0.2, 0.2, 1.0)), vec3(0, 0, -1)));
+
+	//world.spheres.push_back(Sphere( vec3(1, -0.3, -1), 0.25, Material::make_lambertian(vec3(0.8,0.2,0.2)) ));
+	world.instances.push_back(Instance(
+		new Sphere(0.25), 
+		new MatteMaterial(
+			new CheckeredTexture(vec3(0.8, 0.2, 0.2),vec3(1))), 
+		vec3(1, -0.3, -1)));
+
+	//world.spheres.push_back(Sphere(vec3(-0.4, -0.25, -0.5), 0.25, Material::make_dielectric(1.5)));
+	world.instances.push_back(Instance(new Sphere(0.25), new GlassMaterial(1.5f), vec3(-0.4, -0.25, -0.5)));
+
+	//world.spheres.push_back(Sphere(vec3(0, -100.5, -1), 100));
+	world.instances.push_back(Instance(
+		new Sphere(100), 
+		new MatteMaterial(
+			new CheckeredTexture(vec3(1),vec3(0))),
+		vec3(0, -100.5, -1)));
+		*/
+	cornell_box_scene(world);
 
 	//Camera cam(vec3(12, 2, 3), vec3(0), vec3(0, 1, 0), 20, ARATIO,0.1,10.0);
 	//random_scene(&world);

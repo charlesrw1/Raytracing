@@ -115,6 +115,12 @@ struct Ray
 	vec3 dir;
 };
 
+struct Bounds
+{
+	vec3 min, max;
+};
+
+
 bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, float tmax)
 {
 	for (int a = 0; a < 3; a++) {

@@ -145,6 +145,8 @@
     <ClInclude Include="..\3d-Engine\source\deps\include\stb_image\stb_image.h" />
     <ClInclude Include="..\3d-Engine\source\deps\include\stb_image\stb_image_write.h" />
     <ClInclude Include="Math.h" />
+    <ClInclude Include="Trace.h" />
+    <ClInclude Include="Utils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
