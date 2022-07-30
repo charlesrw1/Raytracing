@@ -46,7 +46,15 @@ struct vec3
 	union { float y, g; };
 	union { float z, b; };
 
-	float operator[](int idx) const {
+	float& operator[](int idx) {
+		switch (idx) {
+		case 0: return x;
+		case 1: return y;
+		case 2: return z;
+		default: return x;
+		}
+	}
+	float const& operator[](int idx) const {
 		switch (idx) {
 		case 0: return x;
 		case 1: return y;
