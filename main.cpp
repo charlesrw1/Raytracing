@@ -21,7 +21,7 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 200;
+const int SAMPLES_PER_PIXEL = 100;
 const int MAX_DEPTH = 50;
 const float GAMMA = 2.2;
 
@@ -303,7 +303,7 @@ private:
 class Disk : public Geometry
 {
 public:
-	Disk(vec3 normal, float radius) : normal(normal), radius(radius) {}
+	Disk(vec3 normal, float outer_radius, float inner_radius= -1.f) : normal(normal), outer_radius(outer_radius),inner_radius(inner_radius) {}
 	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
 		// Intersect plane
 		float denom = dot(normal, r.dir);
@@ -318,7 +318,7 @@ public:
 		vec3 plane_intersect = r.pos + r.dir * t;
 		
 		float dist_radius = plane_intersect.length();
-		if (dist_radius > radius)
+		if (dist_radius > outer_radius || dist_radius < inner_radius)
 			return false;
 
 		si->point = plane_intersect;
@@ -329,7 +329,8 @@ public:
 
 private:
 	vec3 normal;
-	float radius;
+	float outer_radius;
+	float inner_radius;
 };
 
 class Box : public Geometry
@@ -425,7 +426,22 @@ private:
 class Instance
 {
 public:
-	Instance(Geometry* geo, Material* mat, vec3 offset) : geometry(geo), material(mat), offset(offset) {}
+	Instance(Geometry* geo, Material* mat, vec3 offset) : geometry(geo), material(mat), offset(offset)
+	{
+		//object_to_world = mat4(1.f);
+		//object_to_world = translate(object_to_world, offset);
+		//world_to_object = inverse(object_to_world);
+
+		mat4 temp_mat = translate(mat4(1), offset);
+		transform = Transform(temp_mat);
+	}
+	Instance(Geometry* geo, Material* mat, mat4 transform) : geometry(geo), material(mat), transform(transform)
+	{
+		//object_to_world = transform;
+		//world_to_object = inverse(object_to_world);
+		//offset = vec3(transform[3].x, transform[3].y, transform[3].z);
+
+	}
 
 	void free_data() {
 		delete geometry;
@@ -434,22 +450,53 @@ public:
 
 	bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const {
 		// Transform ray to model space
-		r.pos = r.pos - offset;
+		
+		//vec4 model_ray_origin = world_to_object * vec4(r.pos, 1.0);
+		//
+		//// transpose of the inverse
+		//mat4 normal_mat = transpose(object_to_world);
+		//normal_mat.make_mat3();
+		//vec3 model_ray_dir = (normal_mat * vec4(r.dir, 0.0)).xyz();
+		//
+		//Ray model_space_ray;
+		//model_space_ray.pos = model_ray_origin.xyz();
+		//model_space_ray.dir = normalize(model_ray_dir);
+
+		Ray model_space_ray = transform.to_model_ray(r);
+
+
+		//r.pos = r.pos - offset;
 		si->material = material;
-		bool result = geometry->intersect(r, tmin, tmax, si);
-		si->point += offset;
+		bool result = geometry->intersect(model_space_ray, tmin, tmax, si);
+		//si->point += offset;
+
+		// transform model space to world space
+		//si->point = (object_to_world * vec4(si->point, 1.0)).xyz();
+		//normal_mat = transpose(world_to_object);
+		//normal_mat.make_mat3();
+		//si->normal = normalize((normal_mat * vec4(si->normal, 0.0)).xyz());
+
+		si->point = transform.to_world_point(si->point);
+		si->normal = transform.to_world_normal(si->normal);
+
+
 		return result;
 	}
+
+	//void print_matricies() {
+	//	std::cout << object_to_world << '\n' << world_to_object << '\n';
+	//}
 private:
 	Geometry* geometry = nullptr;
 	Material* material = nullptr;
 	//mat4 object_to_world;
 	//mat4 world_to_object;
+	Transform transform;
 
 	vec3 offset;	// temporary transform
 };
 
-
+static unsigned int NUM_RAYCASTS = 0;
 struct Scene
 {
 	~Scene() {
@@ -463,6 +510,7 @@ struct Scene
 		bool hit = false;
 		float closest_so_far = tmax;
 		for (const auto& obj : instances) {
+			//NUM_RAYCASTS++;
 			if (obj.intersect(r, tmin, closest_so_far, &temp)) {
 				hit = true;
 				closest_so_far = temp.t;
@@ -647,7 +695,7 @@ void cornell_box_scene(Scene& world)
 
 	world.instances.push_back(Instance(
 
-		new Disk(vec3(0, -1, 0), 0.25),
+		new Disk(vec3(0, -1, 0), 0.25,0.15),
 		//new Rectangle(vec3(0, -1, 0), 0.25,0.25),
 		
 		new EmissiveMaterial(
@@ -700,16 +748,22 @@ void cornell_box_scene(Scene& world)
 	//	vec3(0.5, 0.3, -0.5)
 
 	//));
+
+	mat4 transform = mat4(1.f);
+	//transform = rotate_y(transform, 25);
+	transform = translate(transform, vec3(0.5, 0.25, -0.5));
 	world.instances.push_back(Instance(
 		new Sphere(0.25),
 		//new Cylinder(0.2,0.4),
+		//new Box(vec3(0.5)),
 
-		//new MatteMaterial(
-		//	new ConstantTexture(0.8)),
-		new GlassMaterial(2.0),
-		vec3(0.5, 0.4, -0.5)
+		new MatteMaterial(
+			new ConstantTexture(0.8)),
+		//new GlassMaterial(3.0),
+		transform
 
 	));
+	//world.instances.back().print_matricies();
 
 
 }
@@ -816,6 +870,7 @@ void calc_pixels(int thread_id, ThreadState* ts)
 
 
 }
+//#define SINGLETHREAD
 int main()
 {
 	srand(time(NULL));
@@ -901,7 +956,7 @@ int main()
 	printf("DONE\n");
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	std::cout << "Time elapsed = " << std::chrono::duration_cast<std::chrono::seconds>(end - begin).count() << " seconds" << std::endl;
-
+	std::cout << "Num raycasts: " << NUM_RAYCASTS << '\n';
 	stbi_write_bmp(OUTPUT_NAME[0], WIDTH, HEIGHT,3, buffer[0]);
 
 	//stbi_write_bmp(OUTPUT_NAME[1], WIDTH, HEIGHT, 3, buffer[1]);

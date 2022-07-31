@@ -3,13 +3,6 @@
 #include <random>
 #include "Math.h"
 
-const float PI = 3.14159;
-
-inline float radians(float degrees)
-{
-	return degrees * (PI / 180.f);
-}
-
 inline float random_float()
 {
 	return rand() / (RAND_MAX + 1.0);
