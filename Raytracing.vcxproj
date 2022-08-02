@@ -144,7 +144,10 @@
   <ItemGroup>
     <ClInclude Include="..\3d-Engine\source\deps\include\stb_image\stb_image.h" />
     <ClInclude Include="..\3d-Engine\source\deps\include\stb_image\stb_image_write.h" />
+    <ClInclude Include="Def.h" />
+    <ClInclude Include="Material.h" />
     <ClInclude Include="Math.h" />
+    <ClInclude Include="Object.h" />
     <ClInclude Include="Trace.h" />
     <ClInclude Include="Utils.h" />
   </ItemGroup>

@@ -116,40 +116,13 @@ inline vec3 normalize(vec3 v)
 	return v / v.length();
 }
 
-
-
-struct Ray
+inline vec3 vec_min(const vec3& a, const vec3& b)
 {
-	Ray() : pos(vec3(0)), dir(vec3(1, 0, 0)) {}
-	Ray(vec3 pos, vec3 dir) :pos(pos), dir(dir) {}
-
-	vec3 at(float t) const {
-		return pos + dir * t;
-	}
-
-	vec3 pos;
-	vec3 dir;
-};
-
-struct Bounds
+	return vec3(fmin(a.x, b.x), fmin(a.y, b.y), fmin(a.z, b.z));
+}
+inline vec3 vec_max(const vec3& a, const vec3& b)
 {
-	vec3 min, max;
-};
-
-
-bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, float tmax)
-{
-	for (int a = 0; a < 3; a++) {
-		float t0 = fmin((bmin[a] - r.pos[a]) / r.dir[a],
-						(bmax[a]-r.pos[a])/r.dir[a]);
-		float t1 = fmax((bmin[a] - r.pos[a]) / r.dir[a],
-			(bmax[a] - r.pos[a]) / r.dir[a]);
-		tmin = fmax(t0, tmin);
-		tmax = fmin(t1, tmax);
-		if (tmax <= tmin)
-			return false;
-	}
-	return true;
+	return vec3(fmax(a.x, b.x), fmax(a.y, b.y), fmax(a.z, b.z));
 }
 
 // Vec4
@@ -498,6 +471,18 @@ inline mat4 rotate_y(const mat4& m, float degrees)
 	r.m[10] = cosrad;
 	return r * m;
 }
+inline mat4 rotate_x(const mat4& m, float degrees)
+{
+	float rads = radians(degrees);
+	float sinrad = sin(rads);
+	float cosrad = cos(rads);
+	mat4 r = mat4(1.f);
+	r.m[5] = cosrad;
+	r.m[9] = -sinrad;
+	r.m[6] = sinrad;
+	r.m[10] = cosrad;
+	return r * m; 
+}
 
 inline std::ostream& operator<<(std::ostream& out, const mat4& m)
 {
@@ -508,6 +493,19 @@ inline std::ostream& operator<<(std::ostream& out, const mat4& m)
 
 	return out;
 }
+
+struct Ray
+{
+	Ray() : pos(vec3(0)), dir(vec3(1, 0, 0)) {}
+	Ray(vec3 pos, vec3 dir) :pos(pos), dir(dir) {}
+
+	vec3 at(float t) const {
+		return pos + dir * t;
+	}
+
+	vec3 pos;
+	vec3 dir;
+};
 
 /* For reference
 	0 4 8 12
@@ -574,8 +572,79 @@ private:
 	mat4 inv_m;	// world-to-model matrix
 };
 
-
 // End Mat4
+
+struct Bounds
+{
+	Bounds() {}
+	Bounds(vec3 pos) : min(pos),max(pos) {}
+	Bounds(vec3 min, vec3 max) : min(min), max(max) {}
+
+	float surface_area() const {
+		vec3 size = max - min;
+		return 2.0 * (size.x * size.y + size.x * size.z + size.y * size.z);
+	}
+	Bounds transform_bounds(const Transform& transform) const; 
+
+	bool intersect(const Ray& r, float tmin, float tmax) const {
+		for (int a = 0; a < 3; a++) {
+			float t0 = fmin((min[a] - r.pos[a]) / r.dir[a],
+				(max[a] - r.pos[a]) / r.dir[a]);
+			float t1 = fmax((min[a] - r.pos[a]) / r.dir[a],
+				(max[a] - r.pos[a]) / r.dir[a]);
+			tmin = fmax(t0, tmin);
+			tmax = fmin(t1, tmax);
+			if (tmax <= tmin)
+				return false;
+		}
+		return true;
+	}
+
+	vec3 min, max;
+};
+Bounds bounds_union(const Bounds& b1, const Bounds& b2) {
+	Bounds b;
+	b.min = vec_min(b1.min, b2.min);
+	b.max = vec_max(b1.max, b2.max);
+	return b;
+}
+Bounds bounds_union(const Bounds& b1, const vec3& v) {
+	Bounds b;
+	b.min = vec_min(b1.min, v);
+	b.max = vec_max(b1.max, v);
+	return b;
+}
+Bounds Bounds::transform_bounds(const Transform& transform) const {
+	Bounds b(transform.to_world_point(min));
+	b = bounds_union(b, transform.to_world_point(vec3(max.x, min.y, min.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(max.x, min.y, max.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(min.x, min.y, max.z)));
+
+	b = bounds_union(b, transform.to_world_point(vec3(min.x, max.y, min.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(min.x, max.y, max.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(max.x, max.y, min.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(max.x, max.y, max.z)));
+
+	return b;
+}
+
+
+bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, float tmax)
+{
+	for (int a = 0; a < 3; a++) {
+		float t0 = fmin((bmin[a] - r.pos[a]) / r.dir[a],
+			(bmax[a] - r.pos[a]) / r.dir[a]);
+		float t1 = fmax((bmin[a] - r.pos[a]) / r.dir[a],
+			(bmax[a] - r.pos[a]) / r.dir[a]);
+		tmin = fmax(t0, tmin);
+		tmax = fmin(t1, tmax);
+		if (tmax <= tmin)
+			return false;
+	}
+	return true;
+}
+
+
 
 
 #endif // !VEC3_H

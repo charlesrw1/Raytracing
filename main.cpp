@@ -4,8 +4,13 @@
 #include <chrono>
 #include <thread>
 #include <mutex>
+
+#include "Object.h"
+#include "Material.h"
 #include "Math.h"
 #include "Utils.h"
+#include "Def.h"
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -22,7 +27,7 @@ const float NEAR = 1.0;
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
 const int SAMPLES_PER_PIXEL = 100;
-const int MAX_DEPTH = 50;
+const int MAX_DEPTH = 25;
 const float GAMMA = 2.2;
 
 
@@ -53,448 +58,7 @@ void write_out_no_scale(vec3 color, int x, int y, int file = 1)
 	buffer[file][idx + 1] = clamp(color.y, 0, 1) * 255;
 	buffer[file][idx + 2] = clamp(color.z, 0, 1) * 255;
 }
-class Material;
-struct SurfaceInteraction
-{
-	SurfaceInteraction() {}
-	SurfaceInteraction(vec3 point, Ray r, vec3 outward_normal, const Material* material) 
-		: point(point), w0(-r.dir), material(material)
-	{
-		front_face = dot(r.dir, outward_normal) < 0;
-		normal = (front_face) ? outward_normal : -outward_normal;
-	}
-	vec3 point;
-	vec3 normal;
-	vec3 w0;		// -(incoming ray dir)
-	float t;
-	bool front_face;
 
-	float u=0, v=0;	// texture coordinates
-
-	 const Material* material = nullptr;
-
-	 void set_face_normal(Ray r, vec3 outward) {
-		 front_face = dot(r.dir, outward) < 0;
-		 normal = (front_face) ? outward : -outward;
-	 }
-};
-
-class Texture
-{
-public:
-	virtual ~Texture() {}
-	virtual vec3 sample(float u, float v, vec3 point) const = 0;
-};
-class ConstantTexture : public Texture
-{
-public:
-	ConstantTexture(vec3 color) : color(color) {}
-	ConstantTexture(float r, float g, float b) : color(vec3(r, g, b)) {}
-	ConstantTexture(float rgb) : color(vec3(rgb)) {}
-	virtual vec3 sample(float u, float v, vec3 point) const override {
-		return color;
-	}
-private:
-	vec3 color;
-};
-class CheckeredTexture : public Texture
-{
-public:
-	CheckeredTexture(vec3 even, vec3 odd, float grid = 0.25f) : even(even), odd(odd),grid(PI/grid) {}
-	virtual vec3 sample(float u, float v, vec3 p) const override {
-		float sines = sin(grid * p.x)* sin(grid * p.y)* sin(grid * p.z);
-		//uint8_t res = (fmod(fmod(p.x, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.y, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.z, mod)+mod,mod) < repeat);
-		if (sines < 0)
-			return odd;
-		return even;
-	}
-
-private:
-	vec3 even, odd;
-	float grid;
-};
-
-class Material
-{
-public:
-	virtual ~Material() {}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const {
-		return false;
-	}
-	virtual vec3 emitted() const {
-		return vec3(0);
-	}
-};
-class MatteMaterial : public Material
-{
-public:
-	MatteMaterial(Texture* albedo) : albedo(albedo) {}
-	~MatteMaterial() {
-		delete albedo;
-	}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
-	{
-		vec3 scatter_dir = SI->normal + random_unit_vector();
-
-		if (scatter_dir.near_zero())
-			scatter_dir = SI->normal;
-
-		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(scatter_dir));
-		attenuation = albedo->sample(SI->u,SI->v,SI->point);
-		return true;
-	}
-private:
-	Texture* albedo;
-};
-
-class MetalMaterial : public Material
-{
-public:
-	MetalMaterial(vec3 albedo, float fuzz=0.f) : albedo(albedo), fuzz(fuzz) {}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
-	{
-		vec3 reflected = reflect(-SI->w0, SI->normal);
-		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(reflected + fuzz * random_in_unit_sphere()));
-		attenuation = albedo;
-		return (dot(scattered.dir, SI->normal) > 0);
-	}
-
-private:
-	vec3 albedo;
-	float fuzz;
-};
-
-class GlassMaterial : public Material
-{
-public:
-	GlassMaterial(float index_refraction) : index_r(index_refraction) {}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
-	{
-		attenuation = vec3(1);
-		float refrac_ratio = (SI->front_face) ? (1.0 / index_r) : index_r;
-
-		float cos_theta = fmin(dot(SI->w0, SI->normal), 1.0);
-		float sin_theta = sqrt(1.f - cos_theta * cos_theta);
-
-		bool cant_refract = refrac_ratio * sin_theta > 1.f;
-		vec3 direction;
-		if (cant_refract)
-			direction = reflect(-SI->w0, SI->normal);
-		else
-			direction = refract(-SI->w0, SI->normal, refrac_ratio);
-
-		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
-		scattered = Ray(SI->point + SI->normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
-		return true;
-	}
-private:
-	float index_r;
-};
-class EmissiveMaterial : public Material
-{
-public: 
-	EmissiveMaterial(vec3 emissive_color) : emit(emissive_color) {}
-	virtual vec3 emitted() const override {
-		return emit;
-	}
-
-private:
-	vec3 emit;
-};
-
-
-class Geometry
-{
-public:
-	virtual ~Geometry() {}
-	//virtual Bounds object_bounds() const = 0;
-	//virtual Bounds world_bounds() const;
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const = 0;
-//	virtual float area() const = 0;
-
-};
-
-class Sphere : public Geometry
-{
-public:
-	Sphere(float radius)
-		: radius(radius) {}
-
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
-		vec3 center = vec3(0);
-		
-		vec3 oc = r.pos - center;
-		float a = dot(r.dir, r.dir);
-		float halfb = dot(oc, r.dir);
-		float c = dot(oc, oc) - radius * radius;
-		float discriminant = halfb * halfb - a * c;
-		if (discriminant < 0)
-			return false;
-		float sqrt_dist = sqrt(discriminant);
-		float root = (-halfb - sqrt_dist) / a;
-		if (root<tmin || root>tmax) {
-			root = (-halfb + sqrt_dist) / a;
-			if (root<tmin || root>tmax)
-				return false;
-		}
-		si->t = root;
-		si->point = r.at(root);
-		si->set_face_normal(r, (si->point - center) / radius);
-		return true;
-	}
-
-private:
-	float radius;
-};
-class Rectangle : public Geometry
-{
-public:
-	Rectangle(vec3 normal, vec3 tangent, float u_length, float v_length) {
-		N = normal;
-		T = tangent;
-		B = normalize(cross(N, T));
-		u = u_length/2;
-		v = v_length/2;
-	}
-	Rectangle(vec3 normal, float u_length, float v_length) {
-		N = normal;
-		vec3 up = vec3(0, 1, 0);
-		if (N.y < -0.999) up = vec3(1, 0, 0);
-		else if (N.y > 0.999) up = vec3(0, 0, -1);
-		T = normalize(cross(up, N));
-		B = normalize(cross(N, T));
-		u = u_length/2;
-		v = v_length/2;
-	}
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
-		// Intersect plane
-		float denom = dot(N, r.dir);
-		if (fabs(denom) < 0.01)	// parallel
-			return false;
-		float dist = dot(r.pos, N);
-		float t = -dist / denom;
-		
-		if (t<tmin || t>tmax)
-			return false;
-
-		vec3 plane_intersect = r.pos + r.dir * t;
-		// Check if its within normals
-		float u_dist = dot(plane_intersect, T);
-		if (u_dist < -u || u_dist > u)
-			return false;
-		float v_dist = dot(plane_intersect, B);
-		if (v_dist < -v || v_dist > v)
-			return false;
-
-		// Ray intersects plane
-		si->point = plane_intersect;
-		si->set_face_normal(r, N);
-		si->u = u_dist / u;
-		si->v = v_dist / v;
-		si->t = t;
-		return true;
-	}
-
-private:
-	vec3 N,T,B;// normal, tangent, bitangent
-	float u, v;	// half side lengths
-};
-
-class Disk : public Geometry
-{
-public:
-	Disk(vec3 normal, float outer_radius, float inner_radius= -1.f) : normal(normal), outer_radius(outer_radius),inner_radius(inner_radius) {}
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
-		// Intersect plane
-		float denom = dot(normal, r.dir);
-		if (fabs(denom) < 0.01)	// parallel
-			return false;
-		float dist = dot(r.pos, normal);
-		float t = -dist / denom;
-
-		if (t<tmin || t>tmax)
-			return false;
-
-		vec3 plane_intersect = r.pos + r.dir * t;
-		
-		float dist_radius = plane_intersect.length();
-		if (dist_radius > outer_radius || dist_radius < inner_radius)
-			return false;
-
-		si->point = plane_intersect;
-		si->set_face_normal(r, normal);
-		si->t = t;
-		return true;
-	}
-
-private:
-	vec3 normal;
-	float outer_radius;
-	float inner_radius;
-};
-
-class Box : public Geometry
-{
-public:
-	Box(vec3 box_size) : bmin(box_size / -2.f), bmax(box_size / 2) {}
-
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
-		float axis_min_t[3];
-
-		for (int a = 0; a < 3; a++) {
-			float t0 = fmin((bmin[a] - r.pos[a]) / r.dir[a],
-				(bmax[a] - r.pos[a]) / r.dir[a]);
-			float t1 = fmax((bmin[a] - r.pos[a]) / r.dir[a],
-				(bmax[a] - r.pos[a]) / r.dir[a]);
-			tmin = fmax(t0, tmin);
-			tmax = fmin(t1, tmax);
-			if (tmax <= tmin)
-				return false;
-
-			axis_min_t[a] = tmin;
-		}
-
-		// Greatest axis min is the intersection t
-		float greatest = axis_min_t[0];
-		int idx = 0;
-		if (axis_min_t[1] > greatest) {
-			greatest = axis_min_t[1];
-			idx = 1;
-		}
-		if (axis_min_t[2] > greatest)
-			idx = 2;
-
-		si->point = r.at(axis_min_t[idx]);
-		vec3 normal = vec3(0);
-		normal[idx] = (r.dir[idx] > 0) ? -1.f : 1.f;
-		si->set_face_normal(r, normal);
-		si->t = axis_min_t[idx];
-
-		return true;
-	}
-
-
-private:
-	vec3 bmin, bmax;
-};
-
-class Cylinder : public Geometry
-{
-public:
-	Cylinder(float radius, float height) : radius(radius), ymin(height / -2.f), ymax(height / 2.f) {}
-
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
-		float a = r.dir.x * r.dir.x + r.dir.z * r.dir.z;
-		float b = 2 * (r.pos.x * r.dir.x + r.pos.z * r.dir.z);
-		float c = r.pos.x * r.pos.x + r.pos.z * r.pos.z - radius*radius;
-		float t0, t1;
-		if (!quadratic(a, b, c, t0, t1))
-			return false;
-		if (t0 > tmax || t1 < tmin)
-			return false;
-		float root = t0;
-		if (root <= 0) {
-			root = t1;
-			if (root > tmax)
-				return false;
-		}
-	
-		vec3 point = r.pos + r.dir * root;
-		if (point.y<ymin || point.y>ymax)
-			return false;
-		vec3 normal = vec3(point.x,0,point.z)/radius;
-		si->point = point;
-		si->set_face_normal(r, normal);
-		si->t = root;
-		return true;
-	}
-private:
-	float radius;
-	float ymin, ymax;
-};
-
-
-class TriangleMesh : public Geometry
-{
-public:
-
-private:
-	// BVH for triangles
-	// triangle list
-};
-
-class Instance
-{
-public:
-	Instance(Geometry* geo, Material* mat, vec3 offset) : geometry(geo), material(mat), offset(offset)
-	{
-		//object_to_world = mat4(1.f);
-		//object_to_world = translate(object_to_world, offset);
-		//world_to_object = inverse(object_to_world);
-
-		mat4 temp_mat = translate(mat4(1), offset);
-		transform = Transform(temp_mat);
-	}
-	Instance(Geometry* geo, Material* mat, mat4 transform) : geometry(geo), material(mat), transform(transform)
-	{
-		//object_to_world = transform;
-		//world_to_object = inverse(object_to_world);
-		//offset = vec3(transform[3].x, transform[3].y, transform[3].z);
-
-	}
-
-	void free_data() {
-		delete geometry;
-		delete material;
-	}
-
-	bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const {
-		// Transform ray to model space
-		
-		//vec4 model_ray_origin = world_to_object * vec4(r.pos, 1.0);
-		//
-		//// transpose of the inverse
-		//mat4 normal_mat = transpose(object_to_world);
-		//normal_mat.make_mat3();
-		//vec3 model_ray_dir = (normal_mat * vec4(r.dir, 0.0)).xyz();
-		//
-		//Ray model_space_ray;
-		//model_space_ray.pos = model_ray_origin.xyz();
-		//model_space_ray.dir = normalize(model_ray_dir);
-
-		Ray model_space_ray = transform.to_model_ray(r);
-
-
-		//r.pos = r.pos - offset;
-		si->material = material;
-		bool result = geometry->intersect(model_space_ray, tmin, tmax, si);
-		//si->point += offset;
-
-		// transform model space to world space
-		//si->point = (object_to_world * vec4(si->point, 1.0)).xyz();
-		//normal_mat = transpose(world_to_object);
-		//normal_mat.make_mat3();
-		//si->normal = normalize((normal_mat * vec4(si->normal, 0.0)).xyz());
-
-		si->point = transform.to_world_point(si->point);
-		si->normal = transform.to_world_normal(si->normal);
-
-
-		return result;
-	}
-
-	//void print_matricies() {
-	//	std::cout << object_to_world << '\n' << world_to_object << '\n';
-	//}
-private:
-	Geometry* geometry = nullptr;
-	Material* material = nullptr;
-	//mat4 object_to_world;
-	//mat4 world_to_object;
-	Transform transform;
-
-	vec3 offset;	// temporary transform
-};
 
 static unsigned int NUM_RAYCASTS = 0;
 struct Scene
@@ -628,7 +192,7 @@ vec3 ray_color(Ray r, const Scene& world, int depth)
 	//float t = 0.5 * (r.dir.y + 1.0);
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
-vec3 ray_color_no_R(Ray r, Scene& world, int depth)
+vec3 ray_color_no_R(Ray r, const Scene& world, int depth)
 {
 	SurfaceInteraction si;
 
@@ -654,35 +218,8 @@ vec3 ray_color_no_R(Ray r, Scene& world, int depth)
 	}
 	return sample_color;
 }
-/*
-void random_scene(Scene* world)
-{
-	world->spheres.push_back(Sphere(vec3(0, -1000, 0), 1000));
-	for (int i = -11; i < 11; i++) {
-		for (int j = -11; j < 11; j++) {
-			float rand_mat = random_float();
-			vec3 center = vec3(i + 0.9 * random_float(), 0.2, j + 0.9 * random_float());
-			if ((center - vec3(4, 0.2, 0)).length() <= 0.9)
-				continue;
 
-			if (rand_mat < 0.8) {
-				world->spheres.push_back(Sphere(center, 0.2, Material::make_lambertian(random_vec3(0, 1) * random_vec3(0, 1))));
-			}
-			else if (rand_mat < 0.95) {
-				world->spheres.push_back(Sphere(center, 0.2, Material::make_metal(random_vec3(0.5, 1.0))));
-			}
-			else {
-				world->spheres.push_back(Sphere(center, 0.2, Material::make_dielectric(1.5)));
-			}
-		}
-	}
-
-	world->spheres.push_back(Sphere(vec3(0, 1, 0), 1.0, Material::make_dielectric(1.5)));
-	world->spheres.push_back(Sphere(vec3(-4, 1, 0), 1.0, Material::make_lambertian(vec3(0.4,0.2,0.1))));
-	world->spheres.push_back(Sphere(vec3(4, 1, 0), 1.0, Material::make_metal(vec3(0.7,0.6,0.5))));
-}
-*/
-void cornell_box_scene(Scene& world)
+void cornell_box_scene(Scene& world, Camera& cam)
 {
 	/*
 	world.instances.push_back(Instance(
@@ -695,11 +232,11 @@ void cornell_box_scene(Scene& world)
 
 	world.instances.push_back(Instance(
 
-		new Disk(vec3(0, -1, 0), 0.25,0.15),
-		//new Rectangle(vec3(0, -1, 0), 0.25,0.25),
+		//new Disk(vec3(0, -1, 0), 0.25),
+		new Rectangle(vec3(0, -1, 0), 0.25,0.25),
 		
 		new EmissiveMaterial(
-			vec3(4)
+			vec3(17,12,4)
 		),
 		vec3(0.5, 0.99, -0.5)));
 
@@ -707,65 +244,87 @@ void cornell_box_scene(Scene& world)
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, -1, 0), 1, 1),
 		new MatteMaterial(
-			new ConstantTexture(vec3(0.8))
+			new ConstantTexture(vec3(0.725, 0.71, 0.68))
 		),
 		vec3(0.5, 1, -0.5)));
 
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, 1, 0), 1, 1),
 		new MatteMaterial(
-			new ConstantTexture(vec3(0.8))
+			new ConstantTexture(vec3(0.725, 0.71, 0.68))
 		),
 		vec3(0.5, 0, -0.5)));
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, 0, 1), 1, 1),
 		new MatteMaterial(
-			new ConstantTexture(vec3(0.8))
+			new ConstantTexture(vec3(0.725, 0.71, 0.68))
+			//new CheckeredTexture(vec3(0.1,0.1,0.8),vec3(1),0.1)
 		),
 		vec3(0.5, 0.5, -1)));
 
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(1, 0, 0), 1, 1),
 		new MatteMaterial(
-			new ConstantTexture(vec3(0.9, 0, 0))
+			new ConstantTexture(vec3(0.63, 0.065, 0.05))
 		),
 		vec3(0, 0.5, -0.5)));
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(-1, 0, 0), 1, 1),
 		new MatteMaterial(
-			new ConstantTexture(vec3(0, 0.9, 0))
+			new ConstantTexture(vec3(0.14, 0.45, 0.091))
 		),
 		vec3(1, 0.5, -0.5)));
-
-
-	//world.instances.push_back(Instance(
-	//	new Box(vec3(0.3,0.6,0.5)),
-		//new Cylinder(0.2,0.4),
-
-		//new MatteMaterial(
-		//	new ConstantTexture(0.8)),
-	//	new MetalMaterial(vec3(0.8),0.6),
-	//	vec3(0.5, 0.3, -0.5)
-
-	//));
-
+	/*
+	// Tall box
 	mat4 transform = mat4(1.f);
-	//transform = rotate_y(transform, 25);
-	transform = translate(transform, vec3(0.5, 0.25, -0.5));
+	transform = rotate_y(transform, 25);
+	//transform = rotate_y(transform, 0);
+	transform = translate(transform, vec3(0.32, 0.3, -0.6));
+	world.instances.push_back(Instance(
+		new Box(vec3(0.3,0.6,0.3)),
+		//new Cylinder(0.2,0.4),
+	
+		new MatteMaterial(
+			new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(1.0),0.5),
+		transform
+	
+	));
+	transform = mat4(1);
+	transform = rotate_y(transform, -25);
+	//transform = rotate_y(transform, 0);
+	transform = translate(transform, vec3(0.68, 0.15, -0.35));
+	world.instances.push_back(Instance(
+		new Box(vec3(0.3, 0.3, 0.3)),
+		//new Cylinder(0.2,0.4),
+		//new GlassMaterial(2.0),
+		new MatteMaterial(
+			new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(0.8),0.6),
+		transform
+	
+	));
+	*/
+	
+	mat4 transform = mat4(1);
+	//transform = rotate_x(transform, 125);
+	////transform = rotate_y(transform, 0);
+	transform = translate(transform, vec3(0.5, 0.35, -0.5));
 	world.instances.push_back(Instance(
 		new Sphere(0.25),
-		//new Cylinder(0.2,0.4),
+		//new Cylinder(0.25,0.6),
 		//new Box(vec3(0.5)),
-
-		new MatteMaterial(
-			new ConstantTexture(0.8)),
-		//new GlassMaterial(3.0),
+		//new MetalMaterial(vec3(1.0,1.0,0.0),0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.4)),
+		new GlassMaterial(2.0),
 		transform
-
+	
 	));
+	
 	//world.instances.back().print_matricies();
 
-
+	cam = Camera(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0), 40, ARATIO, 0.0, 5.0);
 }
 
 void checker_scene(Scene& world, Camera& cam)
@@ -798,13 +357,16 @@ void checker_scene(Scene& world, Camera& cam)
 		vec3(0, 0.5, 0.5)
 
 	));
+	mat4 transform = translate(mat4(1), vec3(-1.4, -0.25, -1.0));
+	transform = rotate_x(transform, 90);
 	world.instances.push_back(Instance(
-		new Cylinder(0.25,0.5), 
-		new GlassMaterial(1.5f), 
-		vec3(-1.4, -0.25, -1.0)));
+		new Cylinder(0.25, 0.5),
+		new MetalMaterial(vec3(1), 0),
+		//new GlassMaterial(1.5f), 
+		transform));
 
 	world.background_color = vec3(0.5, 0.7, 1.0);
-	cam = Camera(vec3(1.0, 1.0, 5.0), vec3(0.0, 0.0, 0), vec3(0, 1, 0), 40, ARATIO, 0.01, 4.0);
+	cam = Camera(vec3(2.0, 1.0, -6.0), vec3(-1.4, -0.25, -1.7), vec3(0, 1, 0), 40, ARATIO, 0.01, 4.0);
 }
 
 struct ThreadState
@@ -867,10 +429,7 @@ void calc_pixels(int thread_id, ThreadState* ts)
 		}
 
 	}
-
-
 }
-//#define SINGLETHREAD
 int main()
 {
 	srand(time(NULL));
@@ -881,8 +440,8 @@ int main()
 	
 	Scene world;
 //	Camera cam;
-	Camera cam (vec3(0.15,0.7, 1.5), vec3(0.5,0.5,0), vec3(0, 1, 0), 45, ARATIO,0.01,4.0);
-	cornell_box_scene(world);
+	Camera cam (vec3(0.15,0.8, 1.5), vec3(0.5,0.5,0), vec3(0, 1, 0), 45, ARATIO,0.01,4.0);
+	cornell_box_scene(world,cam);
 	//checker_scene(world, cam);
 
 	//Camera cam(vec3(12, 2, 3), vec3(0), vec3(0, 1, 0), 20, ARATIO,0.1,10.0);
