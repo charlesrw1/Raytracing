@@ -26,7 +26,7 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 200;
+const int SAMPLES_PER_PIXEL = 100;
 const int DIRECT_SAMPLES = 1;
 const int MAX_DEPTH = 5;
 const float GAMMA = 2.2;
@@ -74,12 +74,14 @@ struct Scene
 		Intersection temp;
 		bool hit = false;
 		float closest_so_far = tmax;
-		for (const auto& obj : instances) {
+		for (int i = 0; i < instances.size();i++) {
 			//NUM_RAYCASTS++;
-			if (obj.intersect(r, tmin, closest_so_far, &temp)) {
+			const Instance* obj = &instances[i];
+			if (obj->intersect(r, tmin, closest_so_far, &temp)) {
 				hit = true;
 				closest_so_far = temp.t;
 				*res = temp;
+				res->index = i;
 			}
 		}
 		res->w0 = -r.dir;
@@ -171,18 +173,18 @@ struct Camera
 	float lens_radius;
 };
 
-vec3 shade_direct(const Intersection& si, const Scene& world, const Ray& ray_in)
+vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray_in)
 {
 	vec3 direct = vec3(0);
 	for (int i = 0; i < world.lights.size(); i++)
 	{
-		float sample = 0;
+		vec3 sample = 0;
 		const Instance* light = &world.lights[i];
 
 		float area = light->get_area();
 
 		for (int s = 0; s < DIRECT_SAMPLES; s++) {
-			// Choose sample point across instance geometry
+			// Choose random sample point across instance geometry
 			vec3 point = vec3(0);
 			vec3 normal = vec3(0);
 			light->sample_geometry(si.point, point, normal);
@@ -205,9 +207,21 @@ vec3 shade_direct(const Intersection& si, const Scene& world, const Ray& ray_in)
 			float cos_incident = max(dot(si.normal, light_dir), 0.f);
 			float cos_light = max(dot(-normal, light_dir),0.f);	// 'cosine'
 			float distance_squared = length * length;
-			float geometry_term = (cos_light * area) / distance_squared;
+			//float geometry_term = (cos_light * area) / distance_squared;	// 1/light_pdf
+			float denom = cos_light * area;
+			if (fabs(denom) < 0.00001)
+				continue;
+			float light_pdf = distance_squared/denom;
 
-			sample += geometry_term * si.material->scattering_pdf(light_dir, si.normal);	// (cos(point_normal,L)/PI) / (distance^2)/(area*cos(light_normal,L)
+			// Option A
+			//float brdf_pdf = si.material->scattering_pdf(light_dir, si.normal);
+
+			// Option B
+			float brdf_pdf;
+			vec3 f = si.material->Eval(si, ray_in.dir, light_dir, si.normal, &brdf_pdf);
+
+			float mis= power_heuristic(light_pdf, brdf_pdf);
+			sample += mis*f / light_pdf;// (1.f / light_pdf)* brdf_pdf;;	// (cos(point_normal,L)/PI) / (distance^2)/(area*cos(light_normal,L)
 		}
 
 		direct += sample * (1.f / DIRECT_SAMPLES) * light->get_material()->emitted();
@@ -215,6 +229,7 @@ vec3 shade_direct(const Intersection& si, const Scene& world, const Ray& ray_in)
 
 	return direct;
 }
+
 //#define DIRECT_ONLY_DEBUG
 vec3 ray_color(const Ray r, const Scene& world, int depth)
 {
@@ -250,7 +265,7 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	if (!si.material->scatter(&si, attenuation, scattered_ray, pdf))
 		return emitted;
 	
-	vec3 direct_light = shade_direct(si, world,r);
+	vec3 direct_light = shade_direct_NEE(si, world,r);
 
 
 #ifdef DIRECT_ONLY_DEBUG
@@ -258,7 +273,7 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 #endif // DIRECT_ONLY_DEBUG
 
 
-
+	//pdf = INV_PI;
 	return attenuation  * (direct_light + si.material->scattering_pdf(r, si, scattered_ray) * ray_color(scattered_ray, world, depth - 1) / pdf);
 	//return emitted + attenuation * si.material->scattering_pdf(r, si, scattered_ray) * direct_light / pdf;//ray_color(scattered_ray, world, depth - 1) / pdf;
 	
@@ -266,32 +281,74 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	//float t = 0.5 * (r.dir.y + 1.0);
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
-vec3 ray_color_no_R(Ray r, const Scene& world, int depth)
+vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
-	Intersection si;
+	Intersection si,prev;
+	Ray r = cam_ray;
 
-	Ray ray = r;
-
-	vec3 sample_color = vec3(0.0);
+	vec3 radiance = vec3(0.0);
 	vec3 throughput(1.f);
-	for (int bounce = 0; bounce < MAX_DEPTH; bounce++)
+	int bounces;
+
+	for (bounces=0; bounces < MAX_DEPTH; bounces++)
 	{
-		if (!world.trace_scene(ray, 0, 1000, &si)) {
-			sample_color += throughput * world.background_color;
+		bool intersection = world.trace_scene(r, 0, 1000, &si);
+
+		if (!intersection)
+		{
+			radiance += throughput * world.background_color;
 			break;
 		}
+
+#ifdef NORMAL_DEBUG
+		return pow((si.normal + 1) * 0.5, 2.2);
+#endif
+#ifdef DEPTH_DEBUG
+		return pow(vec3(1 / (si.t + 1.0)), 2.2);
+#endif
+
+		
 		const Material* material = si.material;
 		vec3 emitted = material->emitted();
-		sample_color += throughput * emitted;
-		vec3 attenuation;
+		// Gather radiance from direct
+		float weight = 1.f;
+		if (bounces > 0 && dot(emitted, vec3(1.0)) > 0.1) {
+			float brdf_pdf = prev.material->PDF(prev.w0,r.dir,prev.normal);
+			float cos_light = dot(r.dir, -si.normal);
+			float area = world.instances[si.index].get_area();
+			float denom = area * cos_light;
+			if (denom <= 0.0001)
+				weight = 0.f;
+			else {
+				// MIS
+				float light_pdf = (si.t * si.t) / (denom);
+				weight = power_heuristic(brdf_pdf, light_pdf);
+			}
+		}
+		
+		radiance += weight * emitted * throughput;
+
 		float pdf;
-		if (!material->scatter(&si, attenuation, ray, pdf)) {
+		vec3 f = material->Sample_Eval(si, r.dir, si.normal, &r, &pdf);
+		if (abs(pdf)<0.00001) {
 			break;
 		}
-		throughput = throughput * attenuation;
+		vec3 direct = shade_direct_NEE(si, world, r);
 
+#ifdef DIRECT_ONLY_DEBUG
+		return direct;
+#endif // DIRECT_ONLY_DEBUG
+
+
+		radiance += throughput * direct;
+		//throughput = throughput * (attenuation * si.material->scattering_pdf(r.dir,si.normal) / pdf);
+
+		//radiance += throughput * attenuation * direct;
+		throughput = throughput * f / pdf;// (attenuation * si.material->scattering_pdf(r.dir, si.normal) / pdf);
+
+		prev = si;
 	}
-	return sample_color;
+	return radiance;
 }
 
 void cornell_box_scene(Scene& world, Camera& cam)
@@ -532,7 +589,7 @@ void calc_pixels(int thread_id, ThreadState* ts)
 				float u = float(x + random_float()) / (WIDTH - 1);
 				float v = float(line + random_float()) / (HEIGHT - 1);
 				Ray r = ts->cam->get_ray(u, v);
-				vec3 sample = ray_color(r, *ts->world, MAX_DEPTH);
+				vec3 sample = get_ray_color(r, *ts->world, MAX_DEPTH);
 				total += sample;
 
 

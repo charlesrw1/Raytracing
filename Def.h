@@ -21,6 +21,7 @@ struct Intersection
 
 	float u = 0, v = 0;	// texture coordinates
 
+	int index = 0;
 	const Material* material = nullptr;
 
 	void set_face_normal(Ray r, vec3 outward) {

@@ -117,4 +117,12 @@ inline vec3 rgb_to_float(int r, int g, int b)
 	return vec3(r / 255.f, g / 255.f, b / 255.f);
 }
 
+inline float power_heuristic(float pdf0, float pdf1)
+{
+	float denom = pdf0 * pdf0 + pdf1 * pdf1;
+	if (fabs(denom) < 0.0001)
+		return 0.f;
+	return (pdf0 * pdf0) / denom;
+}
+
 #endif // !UTILS_H

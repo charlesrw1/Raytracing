@@ -52,8 +52,22 @@ public:
 	virtual float scattering_pdf(const vec3& scattered, const vec3& normal) const {
 		return 0.f;
 	}
+
 	virtual vec3 emitted() const {
 		return vec3(0);
+	}
+
+
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const {
+		*pdf = 0;
+		return vec3(0);
+	}
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const {
+		*pdf = 0;
+		return vec3(0);
+	}
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const {
+		return 0.0;
 	}
 };
 class MatteMaterial : public Material
@@ -90,6 +104,26 @@ public:
 
 		return true;
 	}
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override 
+	{
+		vec3 scatter_dir = random_cosine();
+		vec3 T, B;
+		ONB(normal, T, B);
+		scatter_dir = scatter_dir.x * T + scatter_dir.y * B + scatter_dir.z * normal;
+		*out_ray = Ray(si.point + normal * 0.001f, scatter_dir);
+		return Eval(si, in_dir, scatter_dir, normal, pdf);
+	}
+
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override
+	{
+		*pdf = PDF(in_dir, out_dir, normal);
+		return albedo->sample(si.u, si.v, si.point) * max(dot(normal,out_dir),0.f) / PI;
+	}
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override final {
+		return max(dot(normal, out_dir), 0.f) / PI;
+	}
+
+
 	virtual float scattering_pdf(const Ray& in, const Intersection& si, const Ray& scattered) const override {
 		float cosine = dot(si.normal, scattered.dir);
 		return cosine < 0 ? 0 : cosine/PI;

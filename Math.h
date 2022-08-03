@@ -6,6 +6,7 @@
 #include <glm/mat4x4.hpp>
 
 const float PI = 3.14159;
+const float INV_PI = 1.0 / PI;
 
 inline float radians(float degrees)
 {
