@@ -16,8 +16,8 @@
 
 typedef unsigned char u8;
 typedef unsigned int u32;
-const int WIDTH = 512;
-const int HEIGHT = 512;
+const int WIDTH = 256;
+const int HEIGHT = 256;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -26,7 +26,8 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 100;
+const int SAMPLES_PER_PIXEL = 50;
+const int DIRECT_SAMPLES = 10;
 const int MAX_DEPTH = 25;
 const float GAMMA = 2.2;
 
@@ -68,9 +69,9 @@ struct Scene
 			instances[i].free_data();
 	}
 
-	bool trace_scene(Ray r,float tmin,float tmax, SurfaceInteraction* res) const{
+	bool trace_scene(Ray r,float tmin,float tmax, Intersection* res) const{
 		//Trace temp;
-		SurfaceInteraction temp;
+		Intersection temp;
 		bool hit = false;
 		float closest_so_far = tmax;
 		for (const auto& obj : instances) {
@@ -86,6 +87,9 @@ struct Scene
 	}
 
 	std::vector<Instance> instances;
+
+	std::vector<Instance> lights;
+
 	vec3 background_color = vec3(0);
 
 };
@@ -167,34 +171,82 @@ struct Camera
 	float lens_radius;
 };
 
-vec3 ray_color(Ray r, const Scene& world, int depth)
+vec3 shade_direct(const Intersection& si, const Scene& world, const Ray& ray_in)
 {
-	SurfaceInteraction si;
+	vec3 direct = vec3(0);
+	for (int i = 0; i < world.lights.size(); i++)
+	{
+		float sample = 0;
+		const Instance* light = &world.lights[i];
+
+		float area = light->get_area();
+
+		for (int s = 0; s < DIRECT_SAMPLES; s++) {
+			// Choose sample point across instance geometry
+			vec3 point = vec3(0);
+			vec3 normal = vec3(0);
+			light->sample_geometry(si.point, point, normal);
+
+			vec3 light_dir = point - si.point;
+			float length = light_dir.length();
+			light_dir = light_dir / length;
+
+			Ray shadow_ray(si.point + si.normal * 0.0001, light_dir);
+			Intersection light_inter;
+			// Continue if sample is occluded
+			if (world.trace_scene(shadow_ray, 0, length - 0.001, &light_inter))
+				continue;
+
+			// Compute PDF
+			//float cosine = fabs(dot(light_dir, normal));
+			float cos_incident = max(dot(si.normal, light_dir), 0.f);
+			float cos_light = max(dot(-normal, light_dir),0.f);
+			float distance_squared = length * length;
+			float geometry_term = (cos_incident * cos_light * area) / distance_squared;
+
+			sample += geometry_term * si.material->scattering_pdf(-light_dir,normal);
+		}
+
+		direct += sample * (1.f / DIRECT_SAMPLES) * light->get_material()->emitted();
+	}
+
+	return direct;
+}
+
+vec3 ray_color(const Ray r, const Scene& world, int depth)
+{
+	Intersection si;
 	
 	if (depth <= 0)
 		return vec3(0);
 	
-	if (world.trace_scene(r, 0, 1000, &si)) {
-		Ray scattered_ray;
-		vec3 attenuation;
-		vec3 emitted = si.material->emitted();
-		/*
-		vec3 target = trace.point + trace.normal + random_unit_vector();
-		return 0.5 * ray_color(Ray(trace.point+trace.normal*0.001f, normalize(target - trace.point)), world, depth - 1);
-		*/
-		if (si.material->scatter(&si, attenuation, scattered_ray))
-			return emitted + attenuation * ray_color(scattered_ray, world, depth - 1);
-		return emitted;
-
+	if (!world.trace_scene(r, 0, 1000, &si)) {
+		return world.background_color;
 	}
-	return world.background_color;
+
+	Ray scattered_ray;
+	vec3 attenuation;
+	vec3 emitted = si.material->emitted();
+	float pdf;
+	/*
+	vec3 target = trace.point + trace.normal + random_unit_vector();
+	return 0.5 * ray_color(Ray(trace.point+trace.normal*0.001f, normalize(target - trace.point)), world, depth - 1);
+	*/
+	if (!si.material->scatter(&si, attenuation, scattered_ray,pdf))
+		return emitted;
+	
+	vec3 direct_light = shade_direct(si, world,r);
+
+	return emitted + attenuation  * direct_light;//ray_color(scattered_ray, world, depth - 1) / pdf;
+	//return emitted + attenuation * si.material->scattering_pdf(r, si, scattered_ray) * direct_light / pdf;//ray_color(scattered_ray, world, depth - 1) / pdf;
+	
 
 	//float t = 0.5 * (r.dir.y + 1.0);
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
 vec3 ray_color_no_R(Ray r, const Scene& world, int depth)
 {
-	SurfaceInteraction si;
+	Intersection si;
 
 	Ray ray = r;
 
@@ -210,7 +262,8 @@ vec3 ray_color_no_R(Ray r, const Scene& world, int depth)
 		vec3 emitted = material->emitted();
 		sample_color += throughput * emitted;
 		vec3 attenuation;
-		if (!material->scatter(&si, attenuation, ray)) {
+		float pdf;
+		if (!material->scatter(&si, attenuation, ray, pdf)) {
 			break;
 		}
 		throughput = throughput * attenuation;
@@ -240,6 +293,16 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		),
 		vec3(0.5, 0.99, -0.5)));
 
+	world.lights.push_back(Instance(
+
+		//new Disk(vec3(0, -1, 0), 0.25),
+		new Rectangle(vec3(0, -1, 0), 0.25, 0.25),
+
+		new EmissiveMaterial(
+			vec3(17, 12, 4)
+			//vec3(0.5)
+		),
+		vec3(0.5, 0.99, -0.5)));
 
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, -1, 0), 1, 1),
@@ -274,7 +337,7 @@ void cornell_box_scene(Scene& world, Camera& cam)
 			new ConstantTexture(vec3(0.14, 0.45, 0.091))
 		),
 		vec3(1, 0.5, -0.5)));
-	/*
+	
 	// Tall box
 	mat4 transform = mat4(1.f);
 	transform = rotate_y(transform, 25);
@@ -304,8 +367,8 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		transform
 	
 	));
-	*/
 	
+	/*
 	mat4 transform = mat4(1);
 	//transform = rotate_x(transform, 125);
 	////transform = rotate_y(transform, 0);
@@ -321,6 +384,7 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		transform
 	
 	));
+	*/
 	
 	//world.instances.back().print_matricies();
 

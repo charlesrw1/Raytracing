@@ -2,6 +2,7 @@
 #define OBJECT_H
 
 #include "Def.h"
+#include "Utils.h"
 
 class Geometry
 {
@@ -9,9 +10,13 @@ public:
 	virtual ~Geometry() {}
 	//virtual Bounds object_bounds() const = 0;
 	//virtual Bounds world_bounds() const;
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const = 0;
-	//	virtual float area() const = 0;
-
+	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const = 0;
+	virtual float area() const {
+		return 0.f;
+	}
+	virtual void sample_point(const vec3& from, vec3& point, vec3& normal) const {
+		point = vec3(0);
+	}
 };
 
 class Sphere : public Geometry
@@ -20,7 +25,7 @@ public:
 	Sphere(float radius)
 		: radius(radius) {}
 
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override {
 		vec3 center = vec3(0);
 
 		vec3 oc = r.pos - center;
@@ -69,7 +74,7 @@ public:
 		u = u_length / 2;
 		v = v_length / 2;
 	}
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override {
 		// Intersect plane
 		float denom = dot(N, r.dir);
 		if (fabs(denom) < 0.01)	// parallel
@@ -96,7 +101,18 @@ public:
 		si->v = v_dist / v;
 		si->t = t;
 		return true;
-	}/*
+	}
+	virtual float area() const {
+		return (2 * u) * (2 * v);
+	}
+	virtual void sample_point(const vec3& from, vec3& point, vec3& normal) const override{
+		float r1 = random_float(-1,1);
+		float r2 = random_float(-1,1);
+		point = vec3(0);
+		point = T * u * r1 + B * v * r2;
+		normal = N;
+	}
+	/*
 	virtual Bounds object_bounds() const override {
 		Bounds b(T * -u);
 		b = bounds_union(b, T * u);
@@ -114,7 +130,7 @@ class Disk : public Geometry
 {
 public:
 	Disk(vec3 normal, float outer_radius, float inner_radius = -1.f) : normal(normal), outer_radius(outer_radius), inner_radius(inner_radius) {}
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override {
 		// Intersect plane
 		float denom = dot(normal, r.dir);
 		if (fabs(denom) < 0.01)	// parallel
@@ -148,7 +164,7 @@ class Box : public Geometry
 public:
 	Box(vec3 box_size) : bmin(box_size / -2.f), bmax(box_size / 2) {}
 
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override {
 		float greatest_minimum = -INFINITY;
 		int gm_idx;
 
@@ -189,7 +205,7 @@ class Cylinder : public Geometry
 public:
 	Cylinder(float radius, float height) : radius(radius), ymin(height / -2.f), ymax(height / 2.f) {}
 
-	virtual bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const override {
+	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override {
 		float a = r.dir.x * r.dir.x + r.dir.z * r.dir.z;
 		float b = 2 * (r.pos.x * r.dir.x + r.pos.z * r.dir.z);
 		float c = r.pos.x * r.pos.x + r.pos.z * r.pos.z - radius * radius;
@@ -244,7 +260,7 @@ public:
 		delete material;
 	}
 
-	bool intersect(Ray r, float tmin, float tmax, SurfaceInteraction* si) const {
+	bool intersect(Ray r, float tmin, float tmax, Intersection* si) const {
 		// Transform ray to model space
 		Ray model_space_ray = transform.to_model_ray(r);
 
@@ -259,6 +275,23 @@ public:
 
 		return true;
 	}
+
+	void sample_geometry(const vec3& from, vec3& point, vec3& normal) const{
+		vec3 transformed_from = transform.to_model_point(from);
+
+		geometry->sample_point(transformed_from,point,normal);
+
+		point = transform.to_world_point(point);
+		normal = transform.to_world_normal(normal);
+	}
+	float get_area() const {
+		// This doesnt take into account transform scaling
+		return geometry->area();
+	}
+	const Material* get_material() const {
+		return material;
+	}
+
 private:
 	Geometry* geometry = nullptr;
 	Material* material = nullptr;

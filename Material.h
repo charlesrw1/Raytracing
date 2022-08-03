@@ -43,10 +43,13 @@ class Material
 {
 public:
 	virtual ~Material() {}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered, float& pdf) const {
+	virtual bool scatter(const Intersection* SI, vec3& attenuation, Ray& scattered, float& pdf) const {
 		return false;
 	}
-	virtual float scattering_pdf(const Ray& in, const SurfaceInteraction& si, const Ray& scattered) const {
+	virtual float scattering_pdf(const Ray& in, const Intersection& si, const Ray& scattered) const {
+		return 0.f;
+	}
+	virtual float scattering_pdf(const vec3& scattered, const vec3& normal) const {
 		return 0.f;
 	}
 	virtual vec3 emitted() const {
@@ -60,16 +63,34 @@ public:
 	~MatteMaterial() {
 		delete albedo;
 	}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered, float& pdf) const override
+	virtual bool scatter(const Intersection* SI, vec3& attenuation, Ray& scattered, float& pdf) const override
 	{
+	/*
 		vec3 scatter_dir = SI->normal + random_unit_vector();
 
 		if (scatter_dir.near_zero())
 			scatter_dir = SI->normal;
 
 		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(scatter_dir));
+	*/
+		vec3 scatter_dir = random_in_hemisphere(SI->normal);
+		scattered = Ray(SI->point + SI->normal * 0.001f, scatter_dir);
+
 		attenuation = albedo->sample(SI->u, SI->v, SI->point);
+	/*
+		pdf = dot(SI->normal, scattered.dir) / PI;
+	*/
+		pdf = 0.5 / PI;
+
 		return true;
+	}
+	virtual float scattering_pdf(const Ray& in, const Intersection& si, const Ray& scattered) const override {
+		float cosine = dot(si.normal, scattered.dir);
+		return cosine < 0 ? 0 : cosine/PI;
+	}
+	virtual float scattering_pdf(const vec3& scattered, const vec3& normal) const {
+		float cosine = dot(normal, scattered);
+		return cosine < 0 ? 0 : cosine / PI;
 	}
 private:
 	Texture* albedo;
@@ -79,11 +100,14 @@ class MetalMaterial : public Material
 {
 public:
 	MetalMaterial(vec3 albedo, float fuzz = 0.f) : albedo(albedo), fuzz(fuzz) {}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
+	virtual bool scatter(const Intersection* SI, vec3& attenuation, Ray& scattered, float& pdf) const override
 	{
 		vec3 reflected = reflect(-SI->w0, SI->normal);
 		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(reflected + fuzz * random_in_unit_sphere()));
 		attenuation = albedo;
+
+		pdf = 0;
+
 		return (dot(scattered.dir, SI->normal) > 0);
 	}
 
@@ -96,7 +120,7 @@ class GlassMaterial : public Material
 {
 public:
 	GlassMaterial(float index_refraction) : index_r(index_refraction) {}
-	virtual bool scatter(const SurfaceInteraction* SI, vec3& attenuation, Ray& scattered) const override
+	virtual bool scatter(const Intersection* SI, vec3& attenuation, Ray& scattered, float& pdf) const override
 	{
 		attenuation = vec3(1);
 		float refrac_ratio = (SI->front_face) ? (1.0 / index_r) : index_r;
@@ -113,6 +137,9 @@ public:
 
 		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
 		scattered = Ray(SI->point + SI->normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
+
+		pdf = 0;
+
 		return true;
 	}
 private:

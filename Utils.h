@@ -32,6 +32,13 @@ inline vec3 random_unit_vector()
 {
 	return normalize(random_in_unit_sphere());
 }
+inline vec3 random_in_hemisphere(const vec3& normal)
+{
+	vec3 random = random_in_unit_sphere();
+	if (dot(random, normal) < 0)
+		random = -random;
+	return normalize(random);
+}
 
 inline vec3 random_in_unit_disk()
 {

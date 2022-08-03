@@ -11,7 +11,14 @@ inline float radians(float degrees)
 {
 	return degrees * (PI / 180.f);
 }
-
+inline float max(float a, float b)
+{
+	return (a > b) ? a : b;
+}
+inline float min(float a, float b)
+{
+	return (a < b) ? a : b;
+}
 
 struct vec3
 {

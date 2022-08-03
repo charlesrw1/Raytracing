@@ -4,10 +4,10 @@
 #include "Math.h"
 
 class Material;
-struct SurfaceInteraction
+struct Intersection
 {
-	SurfaceInteraction() {}
-	SurfaceInteraction(vec3 point, Ray r, vec3 outward_normal, const Material* material)
+	Intersection() {}
+	Intersection(vec3 point, Ray r, vec3 outward_normal, const Material* material)
 		: point(point), w0(-r.dir), material(material)
 	{
 		front_face = dot(r.dir, outward_normal) < 0;
