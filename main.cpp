@@ -26,9 +26,9 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 50;
-const int DIRECT_SAMPLES = 10;
-const int MAX_DEPTH = 25;
+const int SAMPLES_PER_PIXEL = 200;
+const int DIRECT_SAMPLES = 1;
+const int MAX_DEPTH = 5;
 const float GAMMA = 2.2;
 
 
@@ -197,14 +197,17 @@ vec3 shade_direct(const Intersection& si, const Scene& world, const Ray& ray_in)
 			if (world.trace_scene(shadow_ray, 0, length - 0.001, &light_inter))
 				continue;
 
+			//if (dot(light_dir, normal) >= 0)
+			//	normal = -normal;
+
 			// Compute PDF
 			//float cosine = fabs(dot(light_dir, normal));
 			float cos_incident = max(dot(si.normal, light_dir), 0.f);
-			float cos_light = max(dot(-normal, light_dir),0.f);
+			float cos_light = max(dot(-normal, light_dir),0.f);	// 'cosine'
 			float distance_squared = length * length;
-			float geometry_term = (cos_incident * cos_light * area) / distance_squared;
+			float geometry_term = (cos_light * area) / distance_squared;
 
-			sample += geometry_term * si.material->scattering_pdf(-light_dir,normal);
+			sample += geometry_term * si.material->scattering_pdf(light_dir, si.normal);	// (cos(point_normal,L)/PI) / (distance^2)/(area*cos(light_normal,L)
 		}
 
 		direct += sample * (1.f / DIRECT_SAMPLES) * light->get_material()->emitted();
@@ -212,7 +215,7 @@ vec3 shade_direct(const Intersection& si, const Scene& world, const Ray& ray_in)
 
 	return direct;
 }
-
+//#define DIRECT_ONLY_DEBUG
 vec3 ray_color(const Ray r, const Scene& world, int depth)
 {
 	Intersection si;
@@ -223,21 +226,40 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	if (!world.trace_scene(r, 0, 1000, &si)) {
 		return world.background_color;
 	}
+#ifdef NORMAL_DEBUG
+	return pow((si.normal + 1) * 0.5,2.2);
+#endif
+#ifdef DEPTH_DEBUG
+	return pow(vec3(1/(si.t + 1.0)),2.2);
+#endif
+
 
 	Ray scattered_ray;
 	vec3 attenuation;
-	vec3 emitted = si.material->emitted();
+	vec3 emitted = vec3(0);
+	// Allow emissive materials on first depth
+	if (depth == MAX_DEPTH) {
+		emitted = si.material->emitted();
+	}
+
 	float pdf;
 	/*
 	vec3 target = trace.point + trace.normal + random_unit_vector();
 	return 0.5 * ray_color(Ray(trace.point+trace.normal*0.001f, normalize(target - trace.point)), world, depth - 1);
 	*/
-	if (!si.material->scatter(&si, attenuation, scattered_ray,pdf))
+	if (!si.material->scatter(&si, attenuation, scattered_ray, pdf))
 		return emitted;
 	
 	vec3 direct_light = shade_direct(si, world,r);
 
-	return emitted + attenuation  * direct_light;//ray_color(scattered_ray, world, depth - 1) / pdf;
+
+#ifdef DIRECT_ONLY_DEBUG
+	return direct_light * attenuation;
+#endif // DIRECT_ONLY_DEBUG
+
+
+
+	return attenuation  * (direct_light + si.material->scattering_pdf(r, si, scattered_ray) * ray_color(scattered_ray, world, depth - 1) / pdf);
 	//return emitted + attenuation * si.material->scattering_pdf(r, si, scattered_ray) * direct_light / pdf;//ray_color(scattered_ray, world, depth - 1) / pdf;
 	
 
@@ -282,27 +304,55 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		),
 		vec3(0.5, 0.5,-0.5)));
 		*/
-
+	
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
-		new Rectangle(vec3(0, -1, 0), 0.25,0.25),
+		new Rectangle(vec3(0, -1, 0), 0.25, 0.25),
+
 		
 		new EmissiveMaterial(
 			vec3(17,12,4)
 		),
-		vec3(0.5, 0.99, -0.5)));
+		//vec3(0.5, 0.75, 0)));
+
+		vec3(0.5, 0.999, -0.5)));
 
 	world.lights.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
 		new Rectangle(vec3(0, -1, 0), 0.25, 0.25),
+		//new Rectangle(vec3(0, 0, -1), 0.25, 0.25),
 
 		new EmissiveMaterial(
-			vec3(17, 12, 4)
+			vec3(17, 12, 4) * 2
 			//vec3(0.5)
 		),
-		vec3(0.5, 0.99, -0.5)));
+		vec3(0.5, 0.999, -0.5)));
+		//vec3(0.5, 0.75, 0)));
+
+	/*
+	world.instances.push_back(Instance(
+
+		//new Disk(vec3(0, -1, 0), 0.25),
+		new Rectangle(vec3(-1, 0, 0), 0.25, 0.25),
+
+		new EmissiveMaterial(
+			vec3(4, 12, 17)
+		),
+		vec3(0.95, 0.5, -0.5)));
+
+	world.lights.push_back(Instance(
+
+		//new Disk(vec3(0, -1, 0), 0.25),
+		new Rectangle(vec3(-1, 0, 0), 0.25, 0.25),
+
+		new EmissiveMaterial(
+			vec3(4, 12, 17)
+		),
+		vec3(0.95, 0.5, -0.5)));
+
+		*/
 
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, -1, 0), 1, 1),
@@ -321,6 +371,7 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		new Rectangle(vec3(0, 0, 1), 1, 1),
 		new MatteMaterial(
 			new ConstantTexture(vec3(0.725, 0.71, 0.68))
+
 			//new CheckeredTexture(vec3(0.1,0.1,0.8),vec3(1),0.1)
 		),
 		vec3(0.5, 0.5, -1)));
@@ -335,13 +386,14 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		new Rectangle(vec3(-1, 0, 0), 1, 1),
 		new MatteMaterial(
 			new ConstantTexture(vec3(0.14, 0.45, 0.091))
+			//new ConstantTexture(pow(rgb_to_float(52, 134, 224), 2.2))
 		),
 		vec3(1, 0.5, -0.5)));
 	
 	// Tall box
 	mat4 transform = mat4(1.f);
 	transform = rotate_y(transform, 25);
-	//transform = rotate_y(transform, 0);
+	//transform = rotate_x(transform, 35);
 	transform = translate(transform, vec3(0.32, 0.3, -0.6));
 	world.instances.push_back(Instance(
 		new Box(vec3(0.3,0.6,0.3)),
@@ -369,25 +421,27 @@ void cornell_box_scene(Scene& world, Camera& cam)
 	));
 	
 	/*
+	
 	mat4 transform = mat4(1);
-	//transform = rotate_x(transform, 125);
+	transform = rotate_x(transform, 100);
 	////transform = rotate_y(transform, 0);
-	transform = translate(transform, vec3(0.5, 0.35, -0.5));
+	transform = translate(transform, vec3(0.5, 0.35, -0.4));
 	world.instances.push_back(Instance(
-		new Sphere(0.25),
-		//new Cylinder(0.25,0.6),
+		//new Sphere(0.1),
+		new Cylinder(0.25,0.6),
 		//new Box(vec3(0.5)),
 		//new MetalMaterial(vec3(1.0,1.0,0.0),0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.4)),
-		new GlassMaterial(2.0),
+		new MatteMaterial(
+			new ConstantTexture(0.725, 0.71, 0.68)),
+		//new GlassMaterial(2.0),
 		transform
 	
 	));
+	
 	*/
 	
 	//world.instances.back().print_matricies();
-
+	world.background_color = vec3(0);// vec3(0.5, 0.7, 1.0);// pow(rgb_to_float(48, 45, 57), 2.2);
 	cam = Camera(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0), 40, ARATIO, 0.0, 5.0);
 }
 

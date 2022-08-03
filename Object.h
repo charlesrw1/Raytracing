@@ -46,7 +46,10 @@ public:
 		si->point = r.at(root);
 		si->set_face_normal(r, (si->point - center) / radius);
 		return true;
-	}/*
+	}
+	
+	
+	/*
 	virtual Bounds object_bounds() const override {
 		return Bounds(vec3(-radius), vec3(radius));
 	}*/

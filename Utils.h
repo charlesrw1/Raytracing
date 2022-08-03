@@ -48,6 +48,30 @@ inline vec3 random_in_unit_disk()
 		return p;
 	}
 }
+
+void ONB(const vec3& N, vec3& T, vec3& B)
+{
+	vec3 up = vec3(0, 0, 1);
+	if (fabs(N.z) > 0.999) up = vec3(1, 0, 0);
+	T = normalize(cross(up, N));
+	B = cross(N, T);
+}
+
+inline vec3 random_cosine()
+{
+	float r1 = random_float();
+	float r2 = random_float();
+	float phi = 2 * PI * r1;
+	float cos_theta = sqrt(1 - r2);
+
+	float sin_theta = sqrt(r2);
+	
+	float x = cos(phi) * sin_theta;
+	float y = sin(phi) * sin_theta;
+
+	return vec3(x, y, cos_theta);
+}
+
 inline vec3 reflect(vec3 v, vec3 n)
 {
 	return v - 2 * dot(v, n) * n;
@@ -86,6 +110,11 @@ inline bool quadratic(float a, float b, float c, float& t0, float& t1)
 	if (t1 < t0)
 		std::swap(t0, t1);
 	return true;
+}
+
+inline vec3 rgb_to_float(int r, int g, int b)
+{
+	return vec3(r / 255.f, g / 255.f, b / 255.f);
 }
 
 #endif // !UTILS_H

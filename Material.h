@@ -73,14 +73,20 @@ public:
 
 		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(scatter_dir));
 	*/
-		vec3 scatter_dir = random_in_hemisphere(SI->normal);
+		vec3 scatter_dir = random_cosine();// random_in_hemisphere(SI->normal);
+
+		vec3 T, B;
+		ONB(SI->normal, T, B);
+		scatter_dir = scatter_dir.x * T + scatter_dir.y * B + scatter_dir.z * SI->normal;
+
 		scattered = Ray(SI->point + SI->normal * 0.001f, scatter_dir);
 
 		attenuation = albedo->sample(SI->u, SI->v, SI->point);
-	/*
+		
 		pdf = dot(SI->normal, scattered.dir) / PI;
-	*/
+	/*
 		pdf = 0.5 / PI;
+	*/
 
 		return true;
 	}
@@ -88,7 +94,7 @@ public:
 		float cosine = dot(si.normal, scattered.dir);
 		return cosine < 0 ? 0 : cosine/PI;
 	}
-	virtual float scattering_pdf(const vec3& scattered, const vec3& normal) const {
+	virtual float scattering_pdf(const vec3& scattered, const vec3& normal) const override {
 		float cosine = dot(normal, scattered);
 		return cosine < 0 ? 0 : cosine / PI;
 	}
@@ -106,11 +112,11 @@ public:
 		scattered = Ray(SI->point + SI->normal * 0.001f, normalize(reflected + fuzz * random_in_unit_sphere()));
 		attenuation = albedo;
 
-		pdf = 0;
+		pdf = 1;
 
 		return (dot(scattered.dir, SI->normal) > 0);
 	}
-
+	
 private:
 	vec3 albedo;
 	float fuzz;
