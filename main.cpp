@@ -26,9 +26,9 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 100;
+const int SAMPLES_PER_PIXEL = 25;
 const int DIRECT_SAMPLES = 1;
-const int MAX_DEPTH = 5;
+const int MAX_DEPTH = 10;
 const float GAMMA = 2.2;
 
 
@@ -281,6 +281,7 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	//float t = 0.5 * (r.dir.y + 1.0);
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
+//#define RAY_OUT_DEBUG
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -307,6 +308,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 		return pow(vec3(1 / (si.t + 1.0)), 2.2);
 #endif
 
+
 		
 		const Material* material = si.material;
 		vec3 emitted = material->emitted();
@@ -325,7 +327,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 				weight = power_heuristic(brdf_pdf, light_pdf);
 			}
 		}
-		
+		weight = 1.f;
 		radiance += weight * emitted * throughput;
 
 		float pdf;
@@ -333,14 +335,21 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 		if (abs(pdf)<0.00001) {
 			break;
 		}
-		vec3 direct = shade_direct_NEE(si, world, r);
+
+#ifdef RAY_OUT_DEBUG
+		return pow((r.dir + 1) * 0.5, 2.2);
+#endif
+#ifdef PDF_DEBUG
+		return pow(1/(2*pdf), 2.2);
+#endif
+		//vec3 direct = shade_direct_NEE(si, world, r);
 
 #ifdef DIRECT_ONLY_DEBUG
 		return direct;
 #endif // DIRECT_ONLY_DEBUG
 
 
-		radiance += throughput * direct;
+		//radiance += throughput * direct;
 		//throughput = throughput * (attenuation * si.material->scattering_pdf(r.dir,si.normal) / pdf);
 
 		//radiance += throughput * attenuation * direct;
@@ -355,13 +364,13 @@ void cornell_box_scene(Scene& world, Camera& cam)
 {
 	/*
 	world.instances.push_back(Instance(
-		new Sphere(0.15),
-		new EmissiveMaterial(
-			vec3(3)
+		new Cylinder(0.2,0.3),
+		new MatteMaterial(
+			new ConstantTexture(1)
 		),
-		vec3(0.5, 0.5,-0.5)));
-		*/
-	
+		vec3(0.5, 0.85,-0.5)));
+		
+	*/
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
@@ -467,11 +476,13 @@ void cornell_box_scene(Scene& world, Camera& cam)
 	//transform = rotate_y(transform, 0);
 	transform = translate(transform, vec3(0.68, 0.15, -0.35));
 	world.instances.push_back(Instance(
-		new Box(vec3(0.3, 0.3, 0.3)),
+		new Sphere(0.13),
+		//new Box(vec3(0.3, 0.3, 0.3)),
 		//new Cylinder(0.2,0.4),
 		//new GlassMaterial(2.0),
-		new MatteMaterial(
-			new ConstantTexture(0.725, 0.71, 0.68)),
+		new Microfacet(nullptr,0.5,0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(0.8),0.6),
 		transform
 	
@@ -624,7 +635,7 @@ int main()
 
 	// Initalize threads
 	std::vector<std::thread> threads;
-	threads.resize(std::thread::hardware_concurrency());
+	threads.resize( std::thread::hardware_concurrency());
 
 
 	ThreadState state;

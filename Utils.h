@@ -49,7 +49,7 @@ inline vec3 random_in_unit_disk()
 	}
 }
 
-void ONB(const vec3& N, vec3& T, vec3& B)
+inline void ONB(const vec3& N, vec3& T, vec3& B)
 {
 	vec3 up = vec3(0, 0, 1);
 	if (fabs(N.z) > 0.999) up = vec3(1, 0, 0);

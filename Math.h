@@ -581,7 +581,7 @@ private:
 };
 
 // End Mat4
-
+/*
 struct Bounds
 {
 	Bounds() {}
@@ -653,6 +653,6 @@ bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, floa
 }
 
 
-
+*/
 
 #endif // !VEC3_H

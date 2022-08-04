@@ -136,6 +136,24 @@ private:
 	Texture* albedo;
 };
 
+
+class Microfacet : public Material
+{
+public:
+	Microfacet(Texture* albedo, float roughness, float metalness)
+		: albedo(albedo), roughness(roughness), metalness(metalness) {}
+
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override;
+private:
+
+	Texture* albedo;
+	float roughness;
+	float metalness;
+};
+
+
 class MetalMaterial : public Material
 {
 public:
@@ -178,10 +196,37 @@ public:
 		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
 		scattered = Ray(SI->point + SI->normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
 
-		pdf = 0;
+		pdf = 1;
 
 		return true;
 	}
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const {
+		*pdf = 0;
+		return vec3(0);
+	}
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override {
+		float refrac_ratio = (si.front_face) ? (1.0 / index_r) : index_r;
+
+		float cos_theta = fmin(dot(-in_dir, si.normal), 1.0);
+		float sin_theta = sqrt(1.f - cos_theta * cos_theta);
+
+		bool cant_refract = refrac_ratio * sin_theta > 1.f;
+		vec3 direction;
+		if (cant_refract)
+			direction = reflect(-in_dir, si.normal);
+		else
+			direction = refract(in_dir, si.normal, refrac_ratio);
+
+		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
+		*out_ray = Ray(si.point + si.normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
+		*pdf = 1;
+
+		return vec3(1);
+	}
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override {
+		return 0.0;
+	}
+
 private:
 	float index_r;
 };

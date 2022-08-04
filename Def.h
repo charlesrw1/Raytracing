@@ -2,6 +2,7 @@
 #define DEF_H
 
 #include "Math.h"
+#include <cmath>
 
 class Material;
 struct Intersection
