@@ -62,12 +62,15 @@ public:
 		*pdf = 0;
 		return vec3(0);
 	}
-	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const {
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const {
 		*pdf = 0;
 		return vec3(0);
 	}
 	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const {
 		return 0.0;
+	}
+	virtual bool is_microfacet() const {
+		return false;
 	}
 };
 class MatteMaterial : public Material
@@ -104,7 +107,7 @@ public:
 
 		return true;
 	}
-	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override 
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override 
 	{
 		vec3 scatter_dir = random_cosine();
 		vec3 T, B;
@@ -143,9 +146,12 @@ public:
 	Microfacet(Texture* albedo, float roughness, float metalness)
 		: albedo(albedo), roughness(roughness), metalness(metalness) {}
 
-	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
 	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
 	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override;
+	virtual bool is_microfacet() const override{
+		return true;
+	}
 private:
 
 	Texture* albedo;
@@ -204,7 +210,7 @@ public:
 		*pdf = 0;
 		return vec3(0);
 	}
-	virtual vec3 Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override {
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override {
 		float refrac_ratio = (si.front_face) ? (1.0 / index_r) : index_r;
 
 		float cos_theta = fmin(dot(-in_dir, si.normal), 1.0);

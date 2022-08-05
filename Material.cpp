@@ -1,5 +1,7 @@
 #include "Material.h"
 
+const float TEMP_ALPHA = 0.02;
+
 float BeckmannDistribution(const vec3& H, const vec3& N, float roughness)
 {
 	float roughness_2 = roughness * roughness;
@@ -41,7 +43,7 @@ vec3 GGXSample(const vec3& N, float alpha)
 }
 float GGXPdf(const vec3& V, const vec3& H, const vec3& N, float alpha)
 {
-	return GGXDistribution(N, H, alpha) * max(dot(H, N), 0) / max(0.0001,4.f*dot(V,H));
+	return GGXDistribution(N, H, alpha) * max(dot(H, N), 0) / (4.f * max(dot(V, H),0)+0.0000001f);
 }
 
 
@@ -52,14 +54,14 @@ vec3 FresnelSchlick(float VdotH, vec3 F0)
 
 float GeometrySchlickGGX(float ndotv, float alpha)
 {
-	float k = 0.0001;// alpha* alpha * 0.5;
+	float k = 0.1;// alpha* alpha * 0.5;
 	float denom = ndotv * (1 - k) + k;
 	if (denom == 0) return 0;
 	return ndotv / denom;
 }
 float GeometrySmith(const vec3& N, const vec3& V, const vec3& L, float alpha)
 {
-	float ndotv = max(-dot(N, V), 0);
+	float ndotv = max(dot(N, V), 0);
 	float ndotl = max(dot(N, L), 0);
 	return GeometrySchlickGGX(ndotv, alpha) * GeometrySchlickGGX(ndotl, alpha);
 }
@@ -67,9 +69,9 @@ float GeometrySmith(const vec3& N, const vec3& V, const vec3& L, float alpha)
 
 vec3 GGXEval(const Intersection& si, const vec3& V, const vec3& H, const vec3& L, float roughness, vec3 F0)
 {
-	float alpha = 0.2;// roughness* roughness;
+	float alpha = TEMP_ALPHA;// roughness* roughness;
 	float D = GGXDistribution(si.normal, H, alpha);
-	vec3 F = FresnelSchlick(max(-dot(V, H), 0), F0);
+	vec3 F = FresnelSchlick(max(dot(V, H), 0), F0);
 	float G = GeometrySmith(si.normal, V, L, alpha);
 
 	float denom = 4.0 * max(dot(si.normal, V), 0.0) * max(dot(si.normal, L), 0.0) + 0.0001f;
@@ -109,48 +111,44 @@ float PDF_ggx(const vec3& V, const vec3& H, const vec3& N,float alpha)
 // ---------------------------------------------
 
 
-vec3 Microfacet::Sample_Eval(const Intersection& si, const vec3& in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
+vec3 Microfacet::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
 {
-	float alpha = 0.2; roughness* roughness;
+	float alpha = TEMP_ALPHA; roughness* roughness;
 
+	vec3 Wo = -in_dir;
 	vec3 Wh = GGXSample(normal, alpha);
 	vec3 Wi = -reflect(-in_dir, Wh);
 
-	/*
-	Wi.x = 0;
-	Wi.y = 0;
+	out_ray->pos = si.point + si.normal * 0.0001;
+	out_ray->dir = Wi;
+	*pdf = GGXPdf(Wo, Wh, normal, alpha);
+	//*pdf = min(*pdf, 100'000.0);
+	//if (*pdf != *pdf)
+	//	*pdf = 100'000.0;
 
-	Wi.z = 1/GGXPdf(-in_dir, Wh, normal, alpha);
-	if (Wi.z != Wi.z) {
-		Wi.z = 0;
-		//Wi.x = 1;
-		Wi.y = 1;
-	}
-	*/
-	*out_ray = Ray(si.point + si.normal * 0.0001, Wi);
-	*pdf = GGXPdf(-in_dir, Wh, normal, alpha);
-
-	bool print = random_float() < 0.0001;
-	if (print) {
-	//	std::cout << "PDF: " << *pdf << '\n';
-	}
-
-	//*pdf = 1;
-	
-	return GGXEval(si, -in_dir, Wh, Wi,roughness,vec3(0.8));
+	return GGXEval(si, Wo, Wh, Wi,roughness,vec3(0.8));
 }
 vec3 Microfacet::Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const
 {
-	vec3 Wh = normalize(-in_dir + out_dir);
-	float alpha = 0.5; roughness* roughness;
-	*pdf = GGXPdf(-in_dir, Wh, normal, alpha);
-	return GGXEval(si, -in_dir, Wh, out_dir, roughness, vec3(0.03));
+	vec3 Wo = -in_dir;
+	vec3 Wh = normalize(Wo + out_dir);
+	float alpha = TEMP_ALPHA;// roughness* roughness;
+	*pdf = GGXPdf(Wo, Wh, normal, alpha);
+	//*pdf = min(*pdf, 100'000.0);
+	//if (*pdf != *pdf)
+	//	*pdf = 100'000.0;
+	return GGXEval(si, Wo, Wh, out_dir, roughness, vec3(0.8));
 }
 
 float Microfacet::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const
 {
-	vec3 Wh = normalize(-in_dir + out_dir);
-	return GGXPdf(-in_dir, Wh, normal, 0.5);// roughness* roughness);
+	vec3 Wo = -in_dir;
+	vec3 Wh = normalize(Wo + out_dir);
+	float pdf = GGXPdf(Wo, Wh, normal, TEMP_ALPHA);// roughness* roughness);
+	//pdf = min(pdf, 100'000.0);
+	//if (pdf != pdf)
+	//	pdf = 100'000.0;
+	return pdf;
 }
 /*
 
