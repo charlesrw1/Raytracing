@@ -109,6 +109,12 @@ struct Camera
 		vec3 offset = u_unit * rd.x + v_unit * rd.y;
 
 		return Ray(origin + offset, normalize(lower_left + u * horizontal + v * vertical - origin - offset));
+
+		//u = (u * 2) / WIDTH - 1;
+		//v = (v * 2) / HEIGHT - 1;
+		//vec3 look_pos = (raster_to_world * vec4(u, v, 1, 1)).xyz();
+		//return Ray(origin, normalize(look_pos - origin));
+
 	}
 	Camera(vec3 cam_origin, vec3 look_pos, vec3 up, float yfov, float aspect_ratio, float aperature, float focus_dist)
 	{
@@ -132,6 +138,13 @@ struct Camera
 		lens_radius = aperature / 2.f;
 		u_unit = u;
 		v_unit = v;
+
+		raster_to_world = transpose(mat4(
+			horizontal.x, horizontal.y, horizontal.z, origin.x,
+			vertical.x, vertical.y, vertical.z, origin.y,
+			-front.x, -front.y, -front.z, origin.z,
+			0, 0, 0, 1
+		));
 	}
 
 	void look_dir(vec3 cam_origin, vec3 front_dir, vec3 up, float yfov, float aspect_ratio, float aperature, float focus_dist)
@@ -169,8 +182,51 @@ struct Camera
 	vec3 u_unit;	// unit vectors for horizontal and vertical
 	vec3 v_unit;
 
+	mat4 raster_to_world;
+
 	float lens_radius;
 };
+
+class CameraSampler
+{
+public:
+	CameraSampler() {}
+	CameraSampler(
+		const mat4& view_matrix,
+		float fov,
+		int width,
+		int height
+	)
+	{
+		mat4 raster_to_screen = mat4(
+			2.f/ width, 0, 0, 0,
+			0, 2.f/ height, 0, 0,
+			0, 0, 1, 0,
+			-1, -1, 1, 1
+		);
+		float h =  tan(radians(fov / 2.f));
+		float aspect = (float)width / height;
+		mat4 screen_to_camera = mat4(
+			h * aspect, 0, 0, 0,
+			0, h, 0, 0,
+			0, 0, -1, 0,
+			0, 0, 0, 1
+		);
+
+		raster_to_world = view_matrix * screen_to_camera * raster_to_screen;
+		camera_pos = view_matrix[3].xyz();
+	}
+	Ray get_ray(float raster_x, float raster_y) const {
+		vec3 pos = (raster_to_world * vec4(raster_x, raster_y, 0, 1)).xyz();
+
+		return Ray(camera_pos, normalize(pos - camera_pos));
+	}
+
+
+	vec3 camera_pos;
+	mat4 raster_to_world;
+};
+
 
 vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray_in)
 {
@@ -283,7 +339,7 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
 //#define RAY_OUT_DEBUG
-//#define DIRECT_ONLY_DEBUG
+//#define BRDF_DEBUG
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -385,7 +441,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 	return radiance;
 }
 
-void cornell_box_scene(Scene& world, Camera& cam)
+void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 {
 	/*
 	world.instances.push_back(Instance(
@@ -421,6 +477,33 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		),
 		vec3(0.5, 0.999, -0.5)));
 		//vec3(0.5, 0.75, 0)));
+
+
+	world.instances.push_back(Instance(
+
+		//new Disk(vec3(0, -1, 0), 0.25),
+		new Rectangle(vec3(-1, 0, 0), 0.25, 0.25),
+
+
+		new EmissiveMaterial(
+			vec3(4, 12, 17)
+		),
+		//vec3(0.5, 0.75, 0)));
+
+		vec3(0.999,0.4, -0.5)));
+
+	world.lights.push_back(Instance(
+
+		//new Disk(vec3(0, -1, 0), 0.25),
+		new Rectangle(vec3(-1, 0, 0), 0.25, 0.25),
+
+
+		new EmissiveMaterial(
+			vec3(4, 12, 17)
+		),
+		//vec3(0.5, 0.75, 0)));
+
+		vec3(0.999, 0.4, -0.5)));
 
 	/*
 	world.instances.push_back(Instance(
@@ -486,6 +569,7 @@ void cornell_box_scene(Scene& world, Camera& cam)
 	transform = rotate_y(transform, 25);
 	//transform = rotate_x(transform, 35);
 	transform = translate(transform, vec3(0.32, 0.3, -0.6));
+	transform = look_at(vec3(0.32, 0.3, -0.6), vec3(0.32, 0.3, -0.6) + vec3(0.2, 0.2, 0.8), vec3(0, 1, 0));
 	world.instances.push_back(Instance(
 		new Box(vec3(0.3,0.6,0.3)),
 		//new Cylinder(0.2,0.4),
@@ -496,24 +580,92 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		transform
 	
 	));
+	
 	transform = mat4(1);
 	transform = rotate_y(transform, -25);
 	//transform = rotate_y(transform, 0);
 	transform = translate(transform, vec3(0.68, 0.15, -0.35));
+	//transform = translate(transform, vec3(0.25, 0.40, -0.6));
 	world.instances.push_back(Instance(
-		//new Sphere(0.13),
-		new Box(vec3(0.3, 0.3, 0.3)),
+		new Sphere(0.13),
+		//new Box(vec3(0.3, 0.3, 0.3)),
 		//new Cylinder(0.2,0.4),
 		//new GlassMaterial(2.0),
-		//new Microfacet(nullptr,0.5,0),
-		new MatteMaterial(
-			new ConstantTexture(0.725, 0.71, 0.68)),
+		new Microfacet(nullptr,0.3,0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(0.8),0.6),
 		transform
 	
 	));
-	
 	/*
+	transform = translate(mat4(1), vec3(0.5, 0.40, -0.6));
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		//new Box(vec3(0.3, 0.3, 0.3)),
+		//new Cylinder(0.2,0.4),
+		//new GlassMaterial(2.0),
+		new Microfacet(nullptr, 0.4, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(0.8),0.6),
+		transform
+
+	));
+	transform = translate(mat4(1), vec3(0.75, 0.40, -0.6));
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		//new Box(vec3(0.3, 0.3, 0.3)),
+		//new Cylinder(0.2,0.4),
+		//new GlassMaterial(2.0),
+		new Microfacet(nullptr, 0.5, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(0.8),0.6),
+		transform
+
+	));
+	transform = translate(mat4(1), vec3(0.25, 0.15, -0.4));
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		//new Box(vec3(0.3, 0.3, 0.3)),
+		//new Cylinder(0.2,0.4),
+		//new GlassMaterial(2.0),
+		new Microfacet(nullptr, 0.6, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(0.8),0.6),
+		transform
+
+	));
+	transform = translate(mat4(1), vec3(0.5, 0.15, -0.4));
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		//new Box(vec3(0.3, 0.3, 0.3)),
+		//new Cylinder(0.2,0.4),
+		//new GlassMaterial(2.0),
+		new Microfacet(nullptr, 0.7, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(0.8),0.6),
+		transform
+
+	));
+	transform = translate(mat4(1), vec3(0.75, 0.15, -0.4));
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		//new Box(vec3(0.3, 0.3, 0.3)),
+		//new Cylinder(0.2,0.4),
+		//new GlassMaterial(2.0),
+		new Microfacet(nullptr, 0.8, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(0.8),0.6),
+		transform
+
+	));
+	
+	
 	
 	mat4 transform = mat4(1);
 	transform = rotate_x(transform, 100);
@@ -531,11 +683,15 @@ void cornell_box_scene(Scene& world, Camera& cam)
 	
 	));
 	
+	
 	*/
 	
 	//world.instances.back().print_matricies();
 	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
 	cam = Camera(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0), 40, ARATIO, 0.0, 5.0);
+	cs = CameraSampler(
+		look_at(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0)),
+		40, WIDTH, HEIGHT);
 }
 
 void checker_scene(Scene& world, Camera& cam)
@@ -568,6 +724,8 @@ void checker_scene(Scene& world, Camera& cam)
 		vec3(0, 0.5, 0.5)
 
 	));
+
+
 	mat4 transform = translate(mat4(1), vec3(-1.4, -0.25, -1.0));
 	transform = rotate_x(transform, 90);
 	world.instances.push_back(Instance(
@@ -587,12 +745,14 @@ struct ThreadState
 	float complete = 0.0;
 
 	const Camera* cam;
+	const CameraSampler* cs;
 	const Scene* world;
 };
 // per-thread function
 void calc_pixels(int thread_id, ThreadState* ts)
 {
 	srand(time(NULL) + thread_id);
+	Random rng(thread_id);
 	while (1)
 	{
 		int line;
@@ -622,13 +782,13 @@ void calc_pixels(int thread_id, ThreadState* ts)
 			for (int s = 0; s < SAMPLES_PER_PIXEL; s++) {
 				count = s + 1;
 
-				float u = float(x + random_float()) / (WIDTH - 1);
+				float u = float(x + random_float())/ (WIDTH - 1);
 				float v = float(line + random_float()) / (HEIGHT - 1);
 				Ray r = ts->cam->get_ray(u, v);
 				vec3 sample = get_ray_color(r, *ts->world, MAX_DEPTH);
 
-				//if (sample.x != sample.x)
-				//	sample = vec3(0);
+				if (sample.x != sample.x)
+					sample = vec3(0);
 
 				total += sample;
 
@@ -673,7 +833,8 @@ int main()
 	Scene world;
 //	Camera cam;
 	Camera cam (vec3(0.15,0.8, 1.5), vec3(0.5,0.5,0), vec3(0, 1, 0), 45, ARATIO,0.01,4.0);
-	cornell_box_scene(world,cam);
+	CameraSampler cs;
+	cornell_box_scene(world,cam,cs);
 	//checker_scene(world, cam);
 
 	//Camera cam(vec3(12, 2, 3), vec3(0), vec3(0, 1, 0), 20, ARATIO,0.1,10.0);
@@ -689,6 +850,7 @@ int main()
 	state.current_line = 0;
 	state.cam = &cam;
 	state.world = &world;
+	state.cs = &cs;
 
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	printf("Starting: ");

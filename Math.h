@@ -4,6 +4,7 @@
 #include <iostream>
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
 
 const float PI = 3.1415926536;
 const float INV_PI = 1.0 / PI;
@@ -490,6 +491,23 @@ inline mat4 rotate_x(const mat4& m, float degrees)
 	r.m[6] = sinrad;
 	r.m[10] = cosrad;
 	return r * m; 
+}
+
+inline mat4 look_at(vec3 view_pos, vec3 look_pos, vec3 up)
+{
+	vec3 p = view_pos;
+	vec3 front = normalize(look_pos - view_pos);
+	vec3 z = -front;
+	vec3 x = normalize(cross(up, z));
+	vec3 y = (cross(z, x));
+
+	return transpose(mat4(
+		x.x, y.x, z.x, p.x,
+		x.y, y.y, z.y, p.y,
+		x.z, y.z, z.z, p.z,
+		0, 0, 0, 1
+	));
+
 }
 
 inline std::ostream& operator<<(std::ostream& out, const mat4& m)
