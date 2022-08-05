@@ -16,8 +16,8 @@
 
 typedef unsigned char u8;
 typedef unsigned int u32;
-const int WIDTH = 256;
-const int HEIGHT = 256;
+const int WIDTH = 512;
+const int HEIGHT = 512;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -26,7 +26,7 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 50;
+const int SAMPLES_PER_PIXEL = 100;
 const int DIRECT_SAMPLES = 1;
 const int MAX_DEPTH = 10;
 const float GAMMA = 2.2;
@@ -220,7 +220,7 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 			vec3 f = si.material->Eval(si, ray_in.dir, light_dir, si.normal, &brdf_pdf);
 
 			float mis= power_heuristic(light_pdf, brdf_pdf);
-			mis = light_pdf / (light_pdf + brdf_pdf);	// balance heuristic
+		//	mis = light_pdf / (light_pdf + brdf_pdf);	// balance heuristic
 			sample += mis*f / light_pdf;// (1.f / light_pdf)* brdf_pdf;;	// (cos(point_normal,L)/PI) / (distance^2)/(area*cos(light_normal,L)
 		}
 
@@ -231,6 +231,7 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 }
 
 //#define DIRECT_ONLY_DEBUG
+//#define DIRECT_HIT_DEBUG
 vec3 ray_color(const Ray r, const Scene& world, int depth)
 {
 	Intersection si;
@@ -282,7 +283,7 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
 //#define RAY_OUT_DEBUG
-//#define DIRECT_HIT_DEBUG
+//#define DIRECT_ONLY_DEBUG
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -329,7 +330,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 				// MIS
 				float light_pdf = (prev.point-si.point).length_squared() / (denom);
 				weight = power_heuristic(brdf_pdf, light_pdf);
-				weight = brdf_pdf / (brdf_pdf + light_pdf);
+				//weight = brdf_pdf / (brdf_pdf + light_pdf);
 
 				//if (prev.material->is_microfacet())
 				//{
@@ -347,7 +348,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 		radiance += weight * emitted * throughput;
 #ifdef DIRECT_HIT_DEBUG
 		if (bounces > 0) {
-			return radiance;
+			return weight * emitted * throughput;
 		}
 #endif // DIRECT_HIT_DEBUG
 		float pdf;
@@ -459,11 +460,11 @@ void cornell_box_scene(Scene& world, Camera& cam)
 		vec3(0.5, 0, -0.5)));
 	world.instances.push_back(Instance(
 		new Rectangle(normalize(vec3(0, 0, 1)), 1, 1),
-		//new MatteMaterial(
-		//	new ConstantTexture(vec3(0.725, 0.71, 0.68))
+		new MatteMaterial(
+			new ConstantTexture(vec3(0.725, 0.71, 0.68))
 			//new CheckeredTexture(vec3(0.1,0.1,0.8),vec3(1),0.1)
-		//),
-		new Microfacet(nullptr, 0.5, 0),
+		),
+		//new Microfacet(nullptr, 0.5, 0),
 		vec3(0.5, 0.5, -1)));
 
 	world.instances.push_back(Instance(
@@ -488,9 +489,9 @@ void cornell_box_scene(Scene& world, Camera& cam)
 	world.instances.push_back(Instance(
 		new Box(vec3(0.3,0.6,0.3)),
 		//new Cylinder(0.2,0.4),
-		new Microfacet(nullptr, 0.5, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new Microfacet(nullptr, 0.5, 0),
+		new MatteMaterial(
+			new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(1.0),0.5),
 		transform
 	
@@ -533,7 +534,7 @@ void cornell_box_scene(Scene& world, Camera& cam)
 	*/
 	
 	//world.instances.back().print_matricies();
-	world.background_color = vec3(0);// vec3(0.5, 0.7, 1.0);// pow(rgb_to_float(48, 45, 57), 2.2);
+	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
 	cam = Camera(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0), 40, ARATIO, 0.0, 5.0);
 }
 
@@ -626,8 +627,8 @@ void calc_pixels(int thread_id, ThreadState* ts)
 				Ray r = ts->cam->get_ray(u, v);
 				vec3 sample = get_ray_color(r, *ts->world, MAX_DEPTH);
 
-				if (sample.x != sample.x)
-					sample = vec3(0);
+				//if (sample.x != sample.x)
+				//	sample = vec3(0);
 
 				total += sample;
 

@@ -5,7 +5,7 @@
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
 
-const float PI = 3.14159;
+const float PI = 3.1415926536;
 const float INV_PI = 1.0 / PI;
 
 inline float radians(float degrees)
@@ -578,6 +578,42 @@ public:
 private:
 	mat4 m;	// model-to-world matrix
 	mat4 inv_m;	// world-to-model matrix
+};
+
+
+inline unsigned int wang_hash(unsigned int seed)
+{
+	seed = (seed ^ 61) ^ (seed >> 16);
+	seed *= 9;
+	seed = seed ^ (seed >> 4);
+	seed *= 0x27d4eb2d;
+	seed = seed ^ (seed >> 15);
+	return seed;
+}
+
+
+class Random
+{
+public:
+	Random(unsigned int seed) {
+		state = wang_hash(seed);
+	}
+	unsigned int Rand() {
+		unsigned int x = state;
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		state = x;
+		return x;
+	}
+	float RandF() {
+		return (float)Rand() * (1.0 / 4294967296.0);
+	}
+	float RandF(float min, float max) {
+		min + (max - min) * RandF();
+	}
+
+	unsigned int state;
 };
 
 // End Mat4

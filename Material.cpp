@@ -1,6 +1,6 @@
 #include "Material.h"
 
-const float TEMP_ALPHA = 0.02;
+const float TEMP_ALPHA = 0.15;// 0.01;
 
 float BeckmannDistribution(const vec3& H, const vec3& N, float roughness)
 {
@@ -54,7 +54,7 @@ vec3 FresnelSchlick(float VdotH, vec3 F0)
 
 float GeometrySchlickGGX(float ndotv, float alpha)
 {
-	float k = 0.1;// alpha* alpha * 0.5;
+	float k = 0.1;// 0.001;// alpha* alpha * 0.5;
 	float denom = ndotv * (1 - k) + k;
 	if (denom == 0) return 0;
 	return ndotv / denom;
@@ -122,6 +122,8 @@ vec3 Microfacet::Sample_Eval(const Intersection& si, const vec3 in_dir, const ve
 	out_ray->pos = si.point + si.normal * 0.0001;
 	out_ray->dir = Wi;
 	*pdf = GGXPdf(Wo, Wh, normal, alpha);
+	if (*pdf != *pdf)*pdf = 0;
+
 	//*pdf = min(*pdf, 100'000.0);
 	//if (*pdf != *pdf)
 	//	*pdf = 100'000.0;
@@ -134,6 +136,7 @@ vec3 Microfacet::Eval(const Intersection& si, const vec3& in_dir, const vec3& ou
 	vec3 Wh = normalize(Wo + out_dir);
 	float alpha = TEMP_ALPHA;// roughness* roughness;
 	*pdf = GGXPdf(Wo, Wh, normal, alpha);
+
 	//*pdf = min(*pdf, 100'000.0);
 	//if (*pdf != *pdf)
 	//	*pdf = 100'000.0;
