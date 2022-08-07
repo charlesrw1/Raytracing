@@ -22,6 +22,21 @@ inline float min(float a, float b)
 	return (a < b) ? a : b;
 }
 
+struct vec2
+{
+	vec2() {}
+	vec2(float x, float y) : x(x), y(y) {}
+	vec2(float xy) : x(xy), y(xy) {}
+	float x, y;
+	vec2& operator+=(const vec2& v) {
+		x += v.x;
+		y += v.y;
+		return *this;
+	}
+
+};
+
+
 struct vec3
 {
 	vec3() {};
@@ -60,9 +75,9 @@ struct vec3
 		const static float EPSILON = 0.00001f;
 		return fabs(x) < EPSILON && fabs(y) < EPSILON && fabs(z) < EPSILON;
 	}
-	union { float x, r; };
-	union { float y, g; };
-	union { float z, b; };
+	union { float x, r,u; };
+	union { float y, g,v; };
+	union { float z, b,w; };
 
 	float& operator[](int idx) {
 		switch (idx) {
@@ -492,6 +507,14 @@ inline mat4 rotate_x(const mat4& m, float degrees)
 	r.m[10] = cosrad;
 	return r * m; 
 }
+inline mat4 scale(const mat4& m, vec3 scale)
+{
+	return mat4(
+		scale.x, 0, 0, 0,
+		0, scale.y, 0, 0,
+		0, 0, scale.z, 0,
+		0, 0, 0, 1)* m;
+}
 
 inline mat4 look_at(vec3 view_pos, vec3 look_pos, vec3 up)
 {
@@ -635,7 +658,7 @@ public:
 };
 
 // End Mat4
-/*
+
 struct Bounds
 {
 	Bounds() {}
@@ -664,6 +687,7 @@ struct Bounds
 
 	vec3 min, max;
 };
+/*
 Bounds bounds_union(const Bounds& b1, const Bounds& b2) {
 	Bounds b;
 	b.min = vec_min(b1.min, b2.min);
@@ -705,8 +729,9 @@ bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, floa
 	}
 	return true;
 }
-
-
 */
+
+
+
 
 #endif // !VEC3_H

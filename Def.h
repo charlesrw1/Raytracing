@@ -4,6 +4,8 @@
 #include "Math.h"
 #include <cmath>
 
+using u32 = unsigned int;
+
 class Material;
 struct Intersection
 {

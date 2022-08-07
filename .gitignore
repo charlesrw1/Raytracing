@@ -3,3 +3,5 @@ Debug/
 Release/
 *.png
 *.bmp
+*.obj
+*.mtl

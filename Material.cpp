@@ -20,7 +20,7 @@ float GGXDistribution(const vec3& N, const vec3& H, float alpha)
 	if (NdotH <= 0) return 0;
 	float half_angle = acos(NdotH);
 	float alpha_2 = alpha * alpha;
-	float denom = PI * pow(NdotH, 4.f) * pow(alpha_2 + pow(tan(half_angle), 2.f), 2.f)+0.0001;
+	float denom = PI * pow(NdotH, 4.f) * pow(alpha_2 + pow(tan(half_angle), 2.f), 2.f);// +0.0001;
 	if (denom <= 0) return 0;
 	return alpha_2 / denom;
 }
@@ -74,7 +74,7 @@ vec3 GGXEval(const Intersection& si, const vec3& V, const vec3& H, const vec3& L
 	vec3 F = FresnelSchlick(max(dot(V, H), 0), F0);
 	float G = GeometrySmith(si.normal, V, L, roughness);
 
-	float denom = 4.0 * max(dot(si.normal, V), 0.0) * max(dot(si.normal, L), 0.0) + 0.0001f;
+	float denom = 4.0 * max(dot(si.normal, V), 0.0) * max(dot(si.normal, L), 0.0) + 0.0000001f;
 	return max(dot(si.normal,L),0)*(D*F*G) / denom;
 }
 

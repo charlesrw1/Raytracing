@@ -16,8 +16,8 @@
 
 typedef unsigned char u8;
 typedef unsigned int u32;
-const int WIDTH = 512;
-const int HEIGHT = 512;
+const int WIDTH = 128;
+const int HEIGHT = 128;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -26,9 +26,9 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 100;
+const int SAMPLES_PER_PIXEL = 10;
 const int DIRECT_SAMPLES = 1;
-const int MAX_DEPTH = 10;
+const int MAX_DEPTH = 2;
 const float GAMMA = 2.2;
 
 
@@ -59,6 +59,19 @@ void write_out_no_scale(vec3 color, int x, int y, int file = 1)
 	buffer[file][idx + 2] = clamp(color.z, 0, 1) * 255;
 }
 
+enum AbstractLightType
+{
+	POINT,
+	SPOTLIGHT
+};
+struct AbstractLight
+{
+	AbstractLight(AbstractLightType type, vec3 position, vec3 color)
+		: type(type),position(position),color(color) {}
+	AbstractLightType type;
+	vec3 position;
+	vec3 color;
+};
 
 static unsigned int NUM_RAYCASTS = 0;
 struct Scene
@@ -89,7 +102,8 @@ struct Scene
 
 	std::vector<Instance> instances;
 
-	std::vector<Instance> lights;
+	std::vector<Instance> lights;	// analytic
+	std::vector<AbstractLight> abs_lights;
 
 	vec3 background_color = vec3(0);
 
@@ -227,6 +241,31 @@ public:
 	mat4 raster_to_world;
 };
 
+vec3 shade_direct_abstract_NEE(const Intersection& si, const Scene& world, const Ray& ray_in)
+{
+	vec3 direct = vec3(0);
+	for (int i = 0; i < world.abs_lights.size(); i++)
+	{
+		const AbstractLight* al = &world.abs_lights[i];
+		vec3 light_dir = al->position - si.point;
+		float length = light_dir.length();
+		light_dir /= length;
+
+		Ray shadow_ray(si.point + si.normal * 0.0001, light_dir);
+		Intersection light_inter;
+		if (world.trace_scene(shadow_ray, 0, length - 0.001, &light_inter))
+			continue;
+
+		float cos_light = 1.f;
+		float distance_2 = length * length;
+		float light_pdf = distance_2;	// pdf is really infinite because area = 0
+		float pdf_unused;
+		vec3 F = si.material->Eval(si, ray_in.dir, light_dir, si.normal, &pdf_unused);
+
+		direct += al->color * F / light_pdf;
+	}
+	return direct;
+}
 
 vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray_in)
 {
@@ -283,6 +322,8 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 		direct += sample * (1.f / DIRECT_SAMPLES) * light->get_material()->emitted();
 	}
 
+	direct += shade_direct_abstract_NEE(si, world, ray_in);
+
 	return direct;
 }
 
@@ -338,8 +379,8 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	//float t = 0.5 * (r.dir.y + 1.0);
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
-//#define RAY_OUT_DEBUG
-//#define BRDF_DEBUG
+//#define PDF_DEBUG
+#define DIRECT_ONLY_DEBUG
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -451,7 +492,10 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 		),
 		vec3(0.5, 0.85,-0.5)));
 		
+	world.abs_lights.push_back(AbstractLight(POINT, vec3(0.5, 0.8, -0.5), vec3(2, 0.5, 0.5)));
 	*/
+
+	
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
@@ -463,7 +507,7 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 		),
 		//vec3(0.5, 0.75, 0)));
 
-		vec3(0.5, 0.999, -0.5)));
+		vec3(0.5, 0.5, -0.5)));
 
 	world.lights.push_back(Instance(
 
@@ -475,9 +519,9 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 			vec3(17, 12, 4) * 2
 			//vec3(0.5)
 		),
-		vec3(0.5, 0.999, -0.5)));
+		vec3(0.5, 0.5, -0.5)));
 		//vec3(0.5, 0.75, 0)));
-
+		
 
 	world.instances.push_back(Instance(
 
@@ -566,14 +610,15 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	
 	// Tall box
 	mat4 transform = mat4(1.f);
+	/*
 	transform = rotate_y(transform, 25);
 	//transform = rotate_x(transform, 35);
 	transform = translate(transform, vec3(0.32, 0.3, -0.6));
-	transform = look_at(vec3(0.32, 0.3, -0.6), vec3(0.32, 0.3, -0.6) + vec3(0.2, 0.2, 0.8), vec3(0, 1, 0));
+	//transform = look_at(vec3(0.32, 0.3, -0.6), vec3(0.32, 0.3, -0.6) + vec3(0.2, 0.2, 0.8), vec3(0, 1, 0));
 	world.instances.push_back(Instance(
 		new Box(vec3(0.3,0.6,0.3)),
 		//new Cylinder(0.2,0.4),
-		//new Microfacet(nullptr, 0.5, 0),
+		//new Microfacet(nullptr, 0.9, 0),
 		new MatteMaterial(
 			new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(1.0),0.5),
@@ -587,17 +632,40 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	transform = translate(transform, vec3(0.68, 0.15, -0.35));
 	//transform = translate(transform, vec3(0.25, 0.40, -0.6));
 	world.instances.push_back(Instance(
-		new Sphere(0.13),
-		//new Box(vec3(0.3, 0.3, 0.3)),
+		//new Sphere(0.13),
+		new Box(vec3(0.3, 0.3, 0.3)),
 		//new Cylinder(0.2,0.4),
 		//new GlassMaterial(2.0),
-		new Microfacet(nullptr,0.3,0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new Microfacet(nullptr,0.4,0),
+		new MatteMaterial(
+			new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(0.8),0.6),
 		transform
 	
 	));
+	*/
+	transform =  scale(mat4(1), vec3(1,2.0,1.3));
+	transform = translate(transform, vec3(0.3, 0.25, -0.7));
+	world.instances.push_back(Instance(
+		new Sphere(0.13),
+		//new Cylinder(0.2,0.4),
+		new Microfacet(nullptr, 0.1, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new MetalMaterial(vec3(1.0),0.5),
+		transform
+
+	));
+	transform = scale(mat4(1),vec3(0.2));
+//	transform = rotate_y(transform, -25);
+	transform = translate(transform, vec3(0.5, 0.15, -0.7));
+	world.instances.push_back(Instance(
+		new TriangleMesh(import_mesh("suzanne.obj")),
+		new MatteMaterial(
+			new ConstantTexture(0.725, 0.71, 0.68)),
+		transform
+	));
+
 	/*
 	transform = translate(mat4(1), vec3(0.5, 0.40, -0.6));
 	world.instances.push_back(Instance(
@@ -782,9 +850,12 @@ void calc_pixels(int thread_id, ThreadState* ts)
 			for (int s = 0; s < SAMPLES_PER_PIXEL; s++) {
 				count = s + 1;
 
-				float u = float(x + random_float())/ (WIDTH - 1);
-				float v = float(line + random_float()) / (HEIGHT - 1);
-				Ray r = ts->cam->get_ray(u, v);
+				float u = float(x + random_float());// / (WIDTH - 1);
+				float v = float(line + random_float());// / (HEIGHT - 1);
+				vec2 coords = hammersley_2d(s, SAMPLES_PER_PIXEL);
+				coords += vec2(x, line);
+
+				Ray r = ts->cs->get_ray(coords.x, coords.y);
 				vec3 sample = get_ray_color(r, *ts->world, MAX_DEPTH);
 
 				if (sample.x != sample.x)
