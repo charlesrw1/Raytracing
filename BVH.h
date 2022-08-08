@@ -15,7 +15,7 @@ struct BVHNode
 class BVH
 {
 	static BVH build_bvh(Bounds* bounds, int num_bounds);
-	static BVH build_bvh(Bounds* bounds, float* surface_area, int num_bounds);
+	static BVH build_bvh(Bounds* bounds, float* surface_area, int num_elements);
 
 
 
