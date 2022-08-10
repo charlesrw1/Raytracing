@@ -16,8 +16,8 @@
 
 typedef unsigned char u8;
 typedef unsigned int u32;
-const int WIDTH = 256;
-const int HEIGHT = 256;
+const int WIDTH = 512;
+const int HEIGHT = 512;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -30,7 +30,6 @@ const int SAMPLES_PER_PIXEL = 32;
 const int DIRECT_SAMPLES = 1;
 const int MAX_DEPTH = 10;
 const float GAMMA = 2.2;
-
 
 const char* OUTPUT_NAME[2] = { "Output.bmp","Output2.bmp" };
 
@@ -87,15 +86,12 @@ struct Scene
 		bool hit = false;
 		float closest_so_far = tmax;
 		for (int i = 0; i < instances.size();i++) {
-			//NUM_RAYCASTS++;
 			const Instance* obj = &instances[i];
 			if (obj->intersect(r, tmin, closest_so_far, &temp)) {
 				hit = true;
 				closest_so_far = temp.t;
 				*res = temp;
 				res->index = i;
-				if (temp.use_custom)
-					return true;
 			}
 		}
 		res->w0 = -r.dir;
@@ -383,6 +379,8 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 }
 //#define PDF_DEBUG
 //#define DIRECT_ONLY_DEBUG
+
+//#define NORMAL_DEBUG
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -401,9 +399,6 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 		{
 			radiance += throughput * world.background_color;
 			break;
-		}
-		if (si.use_custom) {
-			return pow(si.custom, 2.2);
 		}
 #ifdef NORMAL_DEBUG
 		return pow((si.normal + 1) * 0.5, 2.2);
@@ -499,7 +494,6 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	world.abs_lights.push_back(AbstractLight(POINT, vec3(0.5, 0.8, -0.5), vec3(2, 0.5, 0.5)));
 	*/
 
-	
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
@@ -525,7 +519,7 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 		),
 		vec3(0.5, 0.999, -0.5)));
 		//vec3(0.5, 0.75, 0)));
-		
+		/*
 	
 	world.instances.push_back(Instance(
 
@@ -553,7 +547,7 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 
 		vec3(0.999, 0.4, -0.5)));
 
-		
+		*/
 		
 	/*
 	world.instances.push_back(Instance(
@@ -577,7 +571,6 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 		vec3(0.95, 0.5, -0.5)));
 
 		*/
-	
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, -1, 0), 1, 1),
 		new MatteMaterial(
@@ -613,7 +606,6 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 			//new ConstantTexture(pow(rgb_to_float(52, 134, 224), 2.2))
 		),
 		vec3(1, 0.5, -0.5)));
-	
 	// Tall box
 	mat4 transform = mat4(1.f);
 	
@@ -665,11 +657,14 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 
 	));*/
 	
-	transform = scale(mat4(1),vec3(0.15));
-	//transform = rotate_y(transform, -20);
-	transform = translate(transform, vec3(0.5, 0.5, -0.5));
+	transform = scale(mat4(1),vec3(0.2));
+	//transform = rotate_x(transform, -15);
+	//transform = rotate_y(transform, 35);
+
+	transform = translate(transform, vec3(0.5, 0.2, -0.5));
 	world.instances.push_back(Instance(
-		new TriangleMesh(import_mesh("suzanne.obj")),
+		new TriangleMesh(import_mesh("bunny.obj")),
+		//new Microfacet(nullptr, 0.45, 0),
 		new MatteMaterial(
 			new ConstantTexture(0.725, 0.71, 0.68)),
 		transform
@@ -988,7 +983,7 @@ int main()
 
 	printf("DONE\n");
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-	std::cout << "Time elapsed = " << std::chrono::duration_cast<std::chrono::seconds>(end - begin).count() << " seconds" << std::endl;
+	std::cout << "Time elapsed = " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << " ms" << std::endl;
 	std::cout << "Num raycasts: " << NUM_RAYCASTS << '\n';
 	stbi_write_bmp(OUTPUT_NAME[0], WIDTH, HEIGHT,3, buffer[0]);
 

@@ -21,6 +21,10 @@ inline float min(float a, float b)
 {
 	return (a < b) ? a : b;
 }
+#define fmin min
+#define fmax max
+
+
 
 struct vec2
 {
@@ -49,6 +53,13 @@ struct vec3
 		x += v.x;
 		y += v.y;
 		z += v.z;
+		return *this;
+	}
+	vec3& operator-=(const vec3& v)
+	{
+		x -= v.x;
+		y -= v.y;
+		z -= v.z;
 		return *this;
 	}
 	vec3& operator*=(float t)
@@ -116,6 +127,10 @@ inline vec3 operator+(const vec3& u, const vec3& v)
 inline vec3 operator*(const vec3& u, const vec3& v)
 {
 	return vec3(u[0] * v[0], u[1] * v[1], u[2] * v[2]);
+}
+inline vec3 operator/(const vec3& u, const vec3& v)
+{
+	return vec3(u[0] / v[0], u[1] / v[1], u[2] / v[2]);
 }
 inline vec3 operator*(float t, const vec3& v)
 {
@@ -670,47 +685,38 @@ public:
 
 struct Bounds
 {
-	Bounds() : min(-INFINITY), max(INFINITY) {}
-	explicit Bounds(vec3 pos) : min(pos),max(pos) {}
-	Bounds(vec3 min, vec3 max) : min(min), max(max) {}
+	Bounds() : bmin(INFINITY), bmax(-INFINITY) {}
+	explicit Bounds(vec3 pos) : bmin(pos),bmax(pos) {}
+	Bounds(vec3 min, vec3 max) : bmin(min), bmax(max) {}
 
 	float surface_area() const {
-		vec3 size = max - min;
+		vec3 size = bmax - bmin;
 		return 2.0 * (size.x * size.y + size.x * size.z + size.y * size.z);
 	}
 	Bounds transform_bounds(const Transform& transform) const; 
 
-	bool intersect(const Ray& r, float tmin, float tmax) const {
-		for (int a = 0; a < 3; a++) {
-			float t0 = fmin((min[a] - r.pos[a]) / r.dir[a],
-				(max[a] - r.pos[a]) / r.dir[a]);
-			float t1 = fmax((min[a] - r.pos[a]) / r.dir[a],
-				(max[a] - r.pos[a]) / r.dir[a]);
-			tmin = fmax(t0, tmin);
-			tmax = fmin(t1, tmax);
-			if (tmax <= tmin)
-				return false;
-		}
-		return true;
-	}
-
-	float intersect(const Ray& r) const
-	{
+	bool intersect(const Ray& r, float& t_out) const {
 		vec3 inv_dir = 1.f / r.dir;
-		vec3 f = (max.x - r.pos.x) / r.dir;// *inv_dir;
-		vec3 n = (min.x - r.pos.x) / r.dir;// *inv_dir;
-		vec3 tmax = vec_max(f, n);
-		vec3 tmin = vec_min(f, n);
-		float t1 = fmin(tmax.x, fmin(tmax.y, tmax.z));
-		float t0 = fmax(tmin.x, fmax(tmin.y, tmin.z));
-		return (t0 >= t1) ? (t0 > 0 ? t0 : t1) : -1;
+		vec3 tmin = (bmin - r.pos) *inv_dir;
+		vec3 tmax = (bmax - r.pos) * inv_dir;
+		vec3 t1_ = vec_min(tmin, tmax);
+		vec3 t2_ = vec_max(tmin, tmax);
+		float tnear = fmax(fmax(t1_.x, t1_.y), t1_.z);
+		float tfar = fmin(fmin(t2_.x, t2_.y), t2_.z);
+
+	
+		if (tnear > tfar || tfar<0)
+			return false;
+		t_out = tnear;
+		return true;
+
 	}
 
 	vec3 get_center() const {
-		return (min + max) / 2.f;
+		return (bmin + bmax) / 2.f;
 	}
 	int longest_axis() const {
-		vec3 lengths = max - min;
+		vec3 lengths = bmax - bmin;
 		int max_num = 0;
 		if (lengths[1] > lengths[max_num])
 			max_num = 1;
@@ -719,31 +725,31 @@ struct Bounds
 		return max_num;
 	}
 
-	vec3 min, max;
+	vec3 bmin, bmax;
 };
 
 inline Bounds bounds_union(const Bounds& b1, const Bounds& b2) {
 	Bounds b;
-	b.min = vec_min(b1.min, b2.min);
-	b.max = vec_max(b1.max, b2.max);
+	b.bmin = vec_min(b1.bmin, b2.bmin);
+	b.bmax = vec_max(b1.bmax, b2.bmax);
 	return b;
 }
 inline Bounds bounds_union(const Bounds& b1, const vec3& v) {
 	Bounds b;
-	b.min = vec_min(b1.min, v);
-	b.max = vec_max(b1.max, v);
+	b.bmin = vec_min(b1.bmin, v);
+	b.bmax = vec_max(b1.bmax, v);
 	return b;
 }
 inline Bounds Bounds::transform_bounds(const Transform& transform) const {
-	Bounds b(transform.to_world_point(min));
-	b = bounds_union(b, transform.to_world_point(vec3(max.x, min.y, min.z)));
-	b = bounds_union(b, transform.to_world_point(vec3(max.x, min.y, max.z)));
-	b = bounds_union(b, transform.to_world_point(vec3(min.x, min.y, max.z)));
+	Bounds b(transform.to_world_point(bmin));
+	b = bounds_union(b, transform.to_world_point(vec3(bmax.x, bmin.y, bmin.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(bmax.x, bmin.y, bmax.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(bmin.x, bmin.y, bmax.z)));
 
-	b = bounds_union(b, transform.to_world_point(vec3(min.x, max.y, min.z)));
-	b = bounds_union(b, transform.to_world_point(vec3(min.x, max.y, max.z)));
-	b = bounds_union(b, transform.to_world_point(vec3(max.x, max.y, min.z)));
-	b = bounds_union(b, transform.to_world_point(vec3(max.x, max.y, max.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(bmin.x, bmax.y, bmin.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(bmin.x, bmax.y, bmax.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(bmax.x, bmax.y, bmin.z)));
+	b = bounds_union(b, transform.to_world_point(vec3(bmax.x, bmax.y, bmax.z)));
 
 	return b;
 }

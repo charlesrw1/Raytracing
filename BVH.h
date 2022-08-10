@@ -4,6 +4,8 @@
 #include "Def.h"
 #include <vector>
 
+const float BVH_EPSILON = 0.0001f;
+
 enum PartitionStrategy
 {
 	BVH_MIDDLE,
@@ -20,7 +22,6 @@ struct BVHNode
 };
 
 
-
 class BVHBuilder;
 
 class BVH
@@ -31,10 +32,6 @@ public:
 	std::vector<BVHNode> nodes;
 	std::vector<int> indicies;
 };
-
-struct Mesh;
-
-//void bvh_from_triangles(BVH* bvh, const Mesh& mesh);
 
 
 #endif // !BVH

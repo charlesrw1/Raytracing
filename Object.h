@@ -352,81 +352,57 @@ public:
 			if (node->count != BVH_BRANCH)
 			{
 				node_check++;
-				//si->t = 0.1;
-				//si->use_custom = true;
-				//si->custom = hashed_color(node - bvh.nodes.data());
-				//return true;
-
 				int index_count = node->count;
 				int index_start = node->left_node;
 				for (int i = 0; i < index_count; i++) {
 					vec3 bary_temp = vec3(0);
 					vec3 N_temp;
 					float t_temp=-1;
-					/*bool res = RayTriangleIntersection(r.pos, r.dir,
-						mesh->verticies[mesh->indicies[index_start + i]].position,
-						mesh->verticies[mesh->indicies[index_start + i + 1]].position,
-						mesh->verticies[mesh->indicies[index_start + i + 2]].position,
-						&bary_temp, &t_temp, &N_temp);*/
+					
 					int mesh_element_index = bvh.indicies[index_start + i] * 3;
-					IntersectTriRay2(r, mesh->verticies[mesh->indicies[mesh_element_index]].position,
-						mesh->verticies[mesh->indicies[mesh_element_index + 1]].position,
-						mesh->verticies[mesh->indicies[mesh_element_index + 2]].position, t_temp, bary_temp);
+					vec3 v0 = mesh->verticies[mesh->indicies[mesh_element_index]].position;
+					vec3 v1 = mesh->verticies[mesh->indicies[mesh_element_index + 1]].position;
+					vec3 v2 = mesh->verticies[mesh->indicies[mesh_element_index + 2]].position;
+					IntersectTriRay2(r,v0,
+						v1,
+						v2, t_temp, bary_temp);
 					bool res = t_temp > 0;
 
 
 					if (!res || t_temp > tmax || t_temp < tmin)
 						continue;
 					tmax = t_temp;
-					//if (res && t_temp < tmax && t_temp < t && t_temp > tmin)
-					//{
-						t = t_temp;
-						tri_vert_start = mesh_element_index;
-						bary = vec3(bary_temp.z,bary_temp.x,bary_temp.y);
-					//}
-
+					t = t_temp;
+					tri_vert_start = mesh_element_index;
+					bary = vec3(bary_temp.z,bary_temp.x,bary_temp.y);
 				}
 				continue;
 			}
-			/*
-			
-			float left_aabb = bvh.nodes[node->left_node].aabb.intersect(r);
-			float right_aabb = bvh.nodes[node->left_node+1].aabb.intersect(r);
 
-			//if (left_aabb > t)left_aabb = -1;
-			//if (right_aabb > t)right_aabb = -1;
+			float left_dist, right_dist;
+			bool left_aabb = bvh.nodes[node->left_node].aabb.intersect(r,left_dist);
+			bool right_aabb = bvh.nodes[node->left_node + 1].aabb.intersect(r,right_dist);
+			left_aabb = left_aabb && left_dist < t;
+			right_aabb = right_aabb && right_dist < t;
 
-			if (left_aabb > 0 && right_aabb > 0)
-			{
-				if (right_aabb > left_aabb)
-				{
-					stack[stack_count++] = &bvh.nodes[node->left_node+1];// stack right
-					stack[stack_count++] = &bvh.nodes[node->left_node];	// stack left
-
+			if (left_aabb && right_aabb) {
+				if (left_dist < right_dist) {
+					stack[stack_count++] = &bvh.nodes[node->left_node + 1];
+					stack[stack_count++]= &bvh.nodes[node->left_node];
 				}
 				else {
-					stack[stack_count++] = &bvh.nodes[node->left_node];	// stack left
-					stack[stack_count++] = &bvh.nodes[node->left_node + 1];// stack right
+					stack[stack_count++] = &bvh.nodes[node->left_node];
+					stack[stack_count++] = &bvh.nodes[node->left_node + 1];
 				}
-				continue;
 			}
-			else if (left_aabb > 0)
-				stack[stack_count++] = &bvh.nodes[node->left_node];	// stack left
-			else if (right_aabb > 0)
-				stack[stack_count++] = &bvh.nodes[node->left_node + 1];// stack right
-			*/
-			
-			bool left_aabb = bvh.nodes[node->left_node].aabb.intersect(r,-1000,INFINITY);
-			bool right_aabb = bvh.nodes[node->left_node + 1].aabb.intersect(r,-1000,INFINITY);
-		//	bool left_aabb = bvh.nodes[node->left_node].aabb.intersect(r)>0;
-		//	bool right_aabb = bvh.nodes[node->left_node + 1].aabb.intersect(r)>0;
-			if (left_aabb) {
-				stack[stack_count++]= &bvh.nodes[node->left_node];
+			else if (left_aabb) {
+				stack[stack_count++] = &bvh.nodes[node->left_node];
 			}
-			if (right_aabb) {
+			else if (right_aabb) {
 				stack[stack_count++] = &bvh.nodes[node->left_node + 1];
 			}
 		}
+
 		if (!std::isfinite(t)) {
 			return false;
 		}
@@ -443,6 +419,8 @@ private:
 	const Mesh* mesh;
 	BVH bvh;
 	Bounds mesh_bounds;
+
+	//std::vector<vec3> flattened_triangles;
 };
 /*
 bool hit = false;
