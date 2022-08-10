@@ -16,8 +16,8 @@
 
 typedef unsigned char u8;
 typedef unsigned int u32;
-const int WIDTH = 128;
-const int HEIGHT = 128;
+const int WIDTH = 256;
+const int HEIGHT = 256;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -26,9 +26,9 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 10;
+const int SAMPLES_PER_PIXEL = 32;
 const int DIRECT_SAMPLES = 1;
-const int MAX_DEPTH = 2;
+const int MAX_DEPTH = 10;
 const float GAMMA = 2.2;
 
 
@@ -94,6 +94,8 @@ struct Scene
 				closest_so_far = temp.t;
 				*res = temp;
 				res->index = i;
+				if (temp.use_custom)
+					return true;
 			}
 		}
 		res->w0 = -r.dir;
@@ -328,7 +330,7 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 }
 
 //#define DIRECT_ONLY_DEBUG
-//#define DIRECT_HIT_DEBUG
+//#define NORMAL_DEBUG
 vec3 ray_color(const Ray r, const Scene& world, int depth)
 {
 	Intersection si;
@@ -380,7 +382,7 @@ vec3 ray_color(const Ray r, const Scene& world, int depth)
 	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
 }
 //#define PDF_DEBUG
-#define DIRECT_ONLY_DEBUG
+//#define DIRECT_ONLY_DEBUG
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -400,7 +402,9 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 			radiance += throughput * world.background_color;
 			break;
 		}
-
+		if (si.use_custom) {
+			return pow(si.custom, 2.2);
+		}
 #ifdef NORMAL_DEBUG
 		return pow((si.normal + 1) * 0.5, 2.2);
 #endif
@@ -507,7 +511,7 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 		),
 		//vec3(0.5, 0.75, 0)));
 
-		vec3(0.5, 0.5, -0.5)));
+		vec3(0.5, 0.999, -0.5)));
 
 	world.lights.push_back(Instance(
 
@@ -519,10 +523,10 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 			vec3(17, 12, 4) * 2
 			//vec3(0.5)
 		),
-		vec3(0.5, 0.5, -0.5)));
+		vec3(0.5, 0.999, -0.5)));
 		//vec3(0.5, 0.75, 0)));
 		
-
+	
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
@@ -549,6 +553,8 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 
 		vec3(0.999, 0.4, -0.5)));
 
+		
+		
 	/*
 	world.instances.push_back(Instance(
 
@@ -571,7 +577,7 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 		vec3(0.95, 0.5, -0.5)));
 
 		*/
-
+	
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, -1, 0), 1, 1),
 		new MatteMaterial(
@@ -610,6 +616,7 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	
 	// Tall box
 	mat4 transform = mat4(1.f);
+	
 	/*
 	transform = rotate_y(transform, 25);
 	//transform = rotate_x(transform, 35);
@@ -618,9 +625,9 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	world.instances.push_back(Instance(
 		new Box(vec3(0.3,0.6,0.3)),
 		//new Cylinder(0.2,0.4),
-		//new Microfacet(nullptr, 0.9, 0),
-		new MatteMaterial(
-			new ConstantTexture(0.725, 0.71, 0.68)),
+		new Microfacet(nullptr, 0.05, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(1.0),0.5),
 		transform
 	
@@ -636,37 +643,39 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 		new Box(vec3(0.3, 0.3, 0.3)),
 		//new Cylinder(0.2,0.4),
 		//new GlassMaterial(2.0),
-		//new Microfacet(nullptr,0.4,0),
-		new MatteMaterial(
-			new ConstantTexture(0.725, 0.71, 0.68)),
+		new Microfacet(nullptr,0.7,0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(0.8),0.6),
 		transform
 	
 	));
 	*/
-	transform =  scale(mat4(1), vec3(1,2.0,1.3));
-	transform = translate(transform, vec3(0.3, 0.25, -0.7));
+	/*
+	//transform =  scale(mat4(1), vec3(1,1.0,1.3));
+	transform = translate(mat4(1), vec3(0.3, 0.25, -0.1));
 	world.instances.push_back(Instance(
-		new Sphere(0.13),
+		new Sphere(0.11),
 		//new Cylinder(0.2,0.4),
-		new Microfacet(nullptr, 0.1, 0),
+		new Microfacet(nullptr, 0.3, 0),
 		//new MatteMaterial(
 		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(1.0),0.5),
 		transform
 
-	));
-	transform = scale(mat4(1),vec3(0.2));
-//	transform = rotate_y(transform, -25);
-	transform = translate(transform, vec3(0.5, 0.15, -0.7));
+	));*/
+	
+	transform = scale(mat4(1),vec3(0.15));
+	//transform = rotate_y(transform, -20);
+	transform = translate(transform, vec3(0.5, 0.5, -0.5));
 	world.instances.push_back(Instance(
 		new TriangleMesh(import_mesh("suzanne.obj")),
 		new MatteMaterial(
 			new ConstantTexture(0.725, 0.71, 0.68)),
 		transform
 	));
-
 	/*
+	
 	transform = translate(mat4(1), vec3(0.5, 0.40, -0.6));
 	world.instances.push_back(Instance(
 		new Sphere(0.1),
@@ -756,7 +765,7 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	
 	//world.instances.back().print_matricies();
 	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
-	cam = Camera(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0), 40, ARATIO, 0.0, 5.0);
+	cam = Camera(vec3(-0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0), 40, ARATIO, 0.0, 5.0);
 	cs = CameraSampler(
 		look_at(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0)),
 		40, WIDTH, HEIGHT);
@@ -907,7 +916,7 @@ int main()
 	CameraSampler cs;
 	cornell_box_scene(world,cam,cs);
 	//checker_scene(world, cam);
-
+	
 	//Camera cam(vec3(12, 2, 3), vec3(0), vec3(0, 1, 0), 20, ARATIO,0.1,10.0);
 	//random_scene(&world);
 

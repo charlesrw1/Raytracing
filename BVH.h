@@ -4,22 +4,37 @@
 #include "Def.h"
 #include <vector>
 
+enum PartitionStrategy
+{
+	BVH_MIDDLE,
+	BVH_MEDIAN,
+	BVH_SAH
+};
+
+#define BVH_BRANCH -1
 struct BVHNode
 {
 	Bounds aabb;
-	u32 left_node;
-	u32 element_index;
-	u32 element_count;
+	int left_node;	// points to start of indicies if count != BVH_BRANCH
+	int count=BVH_BRANCH;	// if not a branch, count of indicies
 };
+
+
+
+class BVHBuilder;
 
 class BVH
 {
-	static BVH build_bvh(Bounds* bounds, int num_bounds);
-	static BVH build_bvh(Bounds* bounds, float* surface_area, int num_elements);
-
-
+public:
+	static BVH build(const std::vector<Bounds>& bounds, PartitionStrategy strat);
 
 	std::vector<BVHNode> nodes;
+	std::vector<int> indicies;
 };
+
+struct Mesh;
+
+//void bvh_from_triangles(BVH* bvh, const Mesh& mesh);
+
 
 #endif // !BVH

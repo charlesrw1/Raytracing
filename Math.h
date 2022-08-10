@@ -125,6 +125,10 @@ inline vec3 operator/(const vec3& u, float t)
 {
 	return (1 / t) * u;
 }
+inline vec3 operator/(float t, const vec3& u)
+{
+	return vec3(t / u.x, t / u.y, t / u.z);
+}
 inline float dot(const vec3& u, const vec3& v)
 {
 	return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
@@ -632,6 +636,11 @@ inline unsigned int wang_hash(unsigned int seed)
 	return seed;
 }
 
+inline vec3 hashed_color(int num)
+{
+	int has = wang_hash(num);
+	return vec3(has & 0xFF, (has >> 8) & 0xFF, (has >> 16) & 0xFF) / 255.f;
+}
 
 class Random
 {
@@ -661,8 +670,8 @@ public:
 
 struct Bounds
 {
-	Bounds() {}
-	Bounds(vec3 pos) : min(pos),max(pos) {}
+	Bounds() : min(-INFINITY), max(INFINITY) {}
+	explicit Bounds(vec3 pos) : min(pos),max(pos) {}
 	Bounds(vec3 min, vec3 max) : min(min), max(max) {}
 
 	float surface_area() const {
@@ -685,22 +694,47 @@ struct Bounds
 		return true;
 	}
 
+	float intersect(const Ray& r) const
+	{
+		vec3 inv_dir = 1.f / r.dir;
+		vec3 f = (max.x - r.pos.x) / r.dir;// *inv_dir;
+		vec3 n = (min.x - r.pos.x) / r.dir;// *inv_dir;
+		vec3 tmax = vec_max(f, n);
+		vec3 tmin = vec_min(f, n);
+		float t1 = fmin(tmax.x, fmin(tmax.y, tmax.z));
+		float t0 = fmax(tmin.x, fmax(tmin.y, tmin.z));
+		return (t0 >= t1) ? (t0 > 0 ? t0 : t1) : -1;
+	}
+
+	vec3 get_center() const {
+		return (min + max) / 2.f;
+	}
+	int longest_axis() const {
+		vec3 lengths = max - min;
+		int max_num = 0;
+		if (lengths[1] > lengths[max_num])
+			max_num = 1;
+		if (lengths[2] > lengths[max_num])
+			max_num = 2;
+		return max_num;
+	}
+
 	vec3 min, max;
 };
-/*
-Bounds bounds_union(const Bounds& b1, const Bounds& b2) {
+
+inline Bounds bounds_union(const Bounds& b1, const Bounds& b2) {
 	Bounds b;
 	b.min = vec_min(b1.min, b2.min);
 	b.max = vec_max(b1.max, b2.max);
 	return b;
 }
-Bounds bounds_union(const Bounds& b1, const vec3& v) {
+inline Bounds bounds_union(const Bounds& b1, const vec3& v) {
 	Bounds b;
 	b.min = vec_min(b1.min, v);
 	b.max = vec_max(b1.max, v);
 	return b;
 }
-Bounds Bounds::transform_bounds(const Transform& transform) const {
+inline Bounds Bounds::transform_bounds(const Transform& transform) const {
 	Bounds b(transform.to_world_point(min));
 	b = bounds_union(b, transform.to_world_point(vec3(max.x, min.y, min.z)));
 	b = bounds_union(b, transform.to_world_point(vec3(max.x, min.y, max.z)));
@@ -715,7 +749,7 @@ Bounds Bounds::transform_bounds(const Transform& transform) const {
 }
 
 
-bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, float tmax)
+inline bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, float tmax)
 {
 	for (int a = 0; a < 3; a++) {
 		float t0 = fmin((bmin[a] - r.pos[a]) / r.dir[a],
@@ -729,7 +763,7 @@ bool AABB_hit(const Ray& r, const vec3& bmin, const vec3& bmax, float tmin, floa
 	}
 	return true;
 }
-*/
+
 
 
 
