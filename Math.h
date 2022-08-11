@@ -21,10 +21,36 @@ inline float min(float a, float b)
 {
 	return (a < b) ? a : b;
 }
+
+inline int imax(int a, int b)
+{
+	return (a > b) ? a : b;
+}
+inline int imin(int a, int b)
+{
+	return (a < b) ? a : b;
+}
+
 #define fmin min
 #define fmax max
 
 
+struct vec2i
+{
+	vec2i() {}
+	vec2i(int x, int y) :x(x), y(y) {}
+	vec2i(int xy) : x(xy), y(xy) {}
+	int x, y;
+};
+
+inline vec2i operator+(const vec2i& a, const vec2i& b)
+{
+	return vec2i(a.x + b.x, a.y + b.y);
+}
+inline vec2i operator-(const vec2i& a, const vec2i& b)
+{
+	return vec2i(a.x - b.x, a.y - b.y);
+}
 
 struct vec2
 {
@@ -39,6 +65,14 @@ struct vec2
 	}
 
 };
+inline vec2 operator*(float t, const vec2& v)
+{
+	return vec2(t * v.x, t * v.y);
+}
+inline vec2 operator-(const vec2& u, const vec2& v)
+{
+	return vec2(u.x - v.x, u.y - v.y);
+}
 
 
 struct vec3
@@ -107,6 +141,12 @@ struct vec3
 		return 0;
 	}
 };
+
+template< typename T >
+inline T lerp(const T& start, const T& end, float factor)
+{
+	return start + (end - start) * factor;
+}
 
 using point3f = vec3;
 using color3f = vec3;

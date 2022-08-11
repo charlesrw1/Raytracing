@@ -62,5 +62,8 @@
     <ClInclude Include="BVH.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="Scene.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

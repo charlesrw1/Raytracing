@@ -154,6 +154,7 @@
     <ClInclude Include="Math.h" />
     <ClInclude Include="Mesh.h" />
     <ClInclude Include="Object.h" />
+    <ClInclude Include="Scene.h" />
     <ClInclude Include="Trace.h" />
     <ClInclude Include="Utils.h" />
   </ItemGroup>

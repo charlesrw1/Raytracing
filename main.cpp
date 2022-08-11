@@ -10,6 +10,7 @@
 #include "Math.h"
 #include "Utils.h"
 #include "Def.h"
+#include "Scene.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -26,7 +27,7 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 32;
+const int SAMPLES_PER_PIXEL = 100;
 const int DIRECT_SAMPLES = 1;
 const int MAX_DEPTH = 10;
 const float GAMMA = 2.2;
@@ -72,173 +73,8 @@ struct AbstractLight
 	vec3 color;
 };
 
-static unsigned int NUM_RAYCASTS = 0;
-struct Scene
-{
-	~Scene() {
-		for (int i = 0; i < instances.size(); i++)
-			instances[i].free_data();
-	}
 
-	bool trace_scene(Ray r,float tmin,float tmax, Intersection* res) const{
-		//Trace temp;
-		Intersection temp;
-		bool hit = false;
-		float closest_so_far = tmax;
-		for (int i = 0; i < instances.size();i++) {
-			const Instance* obj = &instances[i];
-			if (obj->intersect(r, tmin, closest_so_far, &temp)) {
-				hit = true;
-				closest_so_far = temp.t;
-				*res = temp;
-				res->index = i;
-			}
-		}
-		res->w0 = -r.dir;
-		return hit;
-	}
-
-	std::vector<Instance> instances;
-
-	std::vector<Instance> lights;	// analytic
-	std::vector<AbstractLight> abs_lights;
-
-	vec3 background_color = vec3(0);
-
-};
-
-struct Camera
-{
-	Camera() {
-		origin = CAM_POS;
-		horizontal = vec3(VIEW_WIDTH, 0, 0);
-		vertical = vec3(0, VIEW_HEIGHT, 0);
-		lower_left = CAM_POS - horizontal / 2 - vertical / 2 - vec3(0, 0, NEAR);
-	}
-	Ray get_ray(float u, float v) const {
-
-		vec3 rd = lens_radius * random_in_unit_disk();
-		vec3 offset = u_unit * rd.x + v_unit * rd.y;
-
-		return Ray(origin + offset, normalize(lower_left + u * horizontal + v * vertical - origin - offset));
-
-		//u = (u * 2) / WIDTH - 1;
-		//v = (v * 2) / HEIGHT - 1;
-		//vec3 look_pos = (raster_to_world * vec4(u, v, 1, 1)).xyz();
-		//return Ray(origin, normalize(look_pos - origin));
-
-	}
-	Camera(vec3 cam_origin, vec3 look_pos, vec3 up, float yfov, float aspect_ratio, float aperature, float focus_dist)
-	{
-
-		float theta = radians(yfov);
-		float h = tan(theta / 2);
-		float view_height = h * 2;
-		float view_width = view_height * aspect_ratio;
-
-		vec3 w = normalize(cam_origin-look_pos);
-		vec3 u = normalize(cross(up, w));
-		vec3 v = normalize(cross(w, u));
-
-		origin = cam_origin;
-		horizontal = view_width * u * focus_dist;
-		vertical = view_height * v * focus_dist;
-		front = w;
-
-		lower_left = origin - horizontal / 2 - vertical / 2 - front*focus_dist;
-
-		lens_radius = aperature / 2.f;
-		u_unit = u;
-		v_unit = v;
-
-		raster_to_world = transpose(mat4(
-			horizontal.x, horizontal.y, horizontal.z, origin.x,
-			vertical.x, vertical.y, vertical.z, origin.y,
-			-front.x, -front.y, -front.z, origin.z,
-			0, 0, 0, 1
-		));
-	}
-
-	void look_dir(vec3 cam_origin, vec3 front_dir, vec3 up, float yfov, float aspect_ratio, float aperature, float focus_dist)
-	{
-		float theta = radians(yfov);
-		float h = tan(theta / 2);
-		float view_height = h * 2;
-		float view_width = view_height * aspect_ratio;
-
-		vec3 w = -front_dir;
-		vec3 u = normalize(cross(up, w));
-		vec3 v = normalize(cross(w, u));
-
-		origin = cam_origin;
-		horizontal = view_width * u * focus_dist;
-		vertical = view_height * v * focus_dist;
-		front = w;
-
-		lower_left = origin - horizontal / 2 - vertical / 2 - front*(focus_dist);
-
-		lens_radius = aperature / 2.f;
-		u_unit = u;
-		v_unit = v;
-	}
-
-	vec3 origin;
-	vec3 front;
-	vec3 up;
-
-
-	vec3 horizontal;
-	vec3 vertical;
-	vec3 lower_left;
-
-	vec3 u_unit;	// unit vectors for horizontal and vertical
-	vec3 v_unit;
-
-	mat4 raster_to_world;
-
-	float lens_radius;
-};
-
-class CameraSampler
-{
-public:
-	CameraSampler() {}
-	CameraSampler(
-		const mat4& view_matrix,
-		float fov,
-		int width,
-		int height
-	)
-	{
-		mat4 raster_to_screen = mat4(
-			2.f/ width, 0, 0, 0,
-			0, 2.f/ height, 0, 0,
-			0, 0, 1, 0,
-			-1, -1, 1, 1
-		);
-		float h =  tan(radians(fov / 2.f));
-		float aspect = (float)width / height;
-		mat4 screen_to_camera = mat4(
-			h * aspect, 0, 0, 0,
-			0, h, 0, 0,
-			0, 0, -1, 0,
-			0, 0, 0, 1
-		);
-
-		raster_to_world = view_matrix * screen_to_camera * raster_to_screen;
-		camera_pos = view_matrix[3].xyz();
-	}
-	Ray get_ray(float raster_x, float raster_y) const {
-		vec3 pos = (raster_to_world * vec4(raster_x, raster_y, 0, 1)).xyz();
-
-		return Ray(camera_pos, normalize(pos - camera_pos));
-	}
-
-
-	vec3 camera_pos;
-	mat4 raster_to_world;
-};
-
+/*
 vec3 shade_direct_abstract_NEE(const Intersection& si, const Scene& world, const Ray& ray_in)
 {
 	vec3 direct = vec3(0);
@@ -264,7 +100,7 @@ vec3 shade_direct_abstract_NEE(const Intersection& si, const Scene& world, const
 	}
 	return direct;
 }
-
+*/
 vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray_in)
 {
 	vec3 direct = vec3(0);
@@ -320,63 +156,11 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 		direct += sample * (1.f / DIRECT_SAMPLES) * light->get_material()->emitted();
 	}
 
-	direct += shade_direct_abstract_NEE(si, world, ray_in);
+	//direct += shade_direct_abstract_NEE(si, world, ray_in);
 
 	return direct;
 }
 
-//#define DIRECT_ONLY_DEBUG
-//#define NORMAL_DEBUG
-vec3 ray_color(const Ray r, const Scene& world, int depth)
-{
-	Intersection si;
-	
-	if (depth <= 0)
-		return vec3(0);
-	
-	if (!world.trace_scene(r, 0, 1000, &si)) {
-		return world.background_color;
-	}
-#ifdef NORMAL_DEBUG
-	return pow((si.normal + 1) * 0.5,2.2);
-#endif
-#ifdef DEPTH_DEBUG
-	return pow(vec3(1/(si.t + 1.0)),2.2);
-#endif
-
-
-	Ray scattered_ray;
-	vec3 attenuation;
-	vec3 emitted = vec3(0);
-	// Allow emissive materials on first depth
-	if (depth == MAX_DEPTH) {
-		emitted = si.material->emitted();
-	}
-
-	float pdf;
-	/*
-	vec3 target = trace.point + trace.normal + random_unit_vector();
-	return 0.5 * ray_color(Ray(trace.point+trace.normal*0.001f, normalize(target - trace.point)), world, depth - 1);
-	*/
-	if (!si.material->scatter(&si, attenuation, scattered_ray, pdf))
-		return emitted;
-	
-	vec3 direct_light = shade_direct_NEE(si, world,r);
-
-
-#ifdef DIRECT_ONLY_DEBUG
-	return direct_light * attenuation;
-#endif // DIRECT_ONLY_DEBUG
-
-
-	//pdf = INV_PI;
-	return attenuation  * (direct_light + si.material->scattering_pdf(r, si, scattered_ray) * ray_color(scattered_ray, world, depth - 1) / pdf);
-	//return emitted + attenuation * si.material->scattering_pdf(r, si, scattered_ray) * direct_light / pdf;//ray_color(scattered_ray, world, depth - 1) / pdf;
-	
-
-	//float t = 0.5 * (r.dir.y + 1.0);
-	//return (1.0 - t) * vec3(1) + t * vec3(0.5, 0.7, 1.0);
-}
 //#define PDF_DEBUG
 //#define DIRECT_ONLY_DEBUG
 
@@ -480,8 +264,34 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 	}
 	return radiance;
 }
+void outside_scene(Scene& world, Camera& cs)
+{
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(0, 1, 0), 2, 2),
+		new MatteMaterial(
+			new ConstantTexture(vec3(0.725, 0.71, 0.68))
+		),
+		vec3(0.5, 0, -0.5)));
 
-void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
+
+	mat4 transform = scale(mat4(1), vec3(0.2));
+
+	transform = translate(transform, vec3(0.5, 0.0, -0.5));
+	world.instances.push_back(Instance(
+		new TriangleMesh(import_mesh("bunny.obj")),
+		new Microfacet(nullptr, 0.3, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		transform
+	));
+
+	world.background_color = vec3(0.5, 0.7, 1.0);// pow(rgb_to_float(244, 215, 193), 2.2);
+	cs = Camera(
+		look_at(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0)),
+		40, WIDTH, HEIGHT);
+
+};
+void cornell_box_scene(Scene& world, Camera& cs)
 {
 	/*
 	world.instances.push_back(Instance(
@@ -664,9 +474,9 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	transform = translate(transform, vec3(0.5, 0.2, -0.5));
 	world.instances.push_back(Instance(
 		new TriangleMesh(import_mesh("bunny.obj")),
-		//new Microfacet(nullptr, 0.45, 0),
-		new MatteMaterial(
-			new ConstantTexture(0.725, 0.71, 0.68)),
+		new Microfacet(nullptr, 0.7, 0),
+		//new MatteMaterial(
+		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		transform
 	));
 	/*
@@ -760,13 +570,12 @@ void cornell_box_scene(Scene& world, Camera& cam, CameraSampler& cs)
 	
 	//world.instances.back().print_matricies();
 	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
-	cam = Camera(vec3(-0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0), 40, ARATIO, 0.0, 5.0);
-	cs = CameraSampler(
+	cs = Camera(
 		look_at(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0)),
 		40, WIDTH, HEIGHT);
 }
 
-void checker_scene(Scene& world, Camera& cam)
+void checker_scene(Scene& world)
 {
 	world.instances.push_back(Instance(new Sphere(0.18), new MetalMaterial(vec3(1)), vec3(0.15, -0.3, -0.2)));
 	
@@ -807,7 +616,6 @@ void checker_scene(Scene& world, Camera& cam)
 		transform));
 
 	world.background_color = vec3(0.5, 0.7, 1.0);
-	cam = Camera(vec3(2.0, 1.0, -6.0), vec3(-1.4, -0.25, -1.7), vec3(0, 1, 0), 40, ARATIO, 0.01, 4.0);
 }
 
 struct ThreadState
@@ -816,8 +624,7 @@ struct ThreadState
 	int current_line;
 	float complete = 0.0;
 
-	const Camera* cam;
-	const CameraSampler* cs;
+	const Camera* cs;
 	const Scene* world;
 };
 // per-thread function
@@ -880,36 +687,211 @@ void calc_pixels(int thread_id, ThreadState* ts)
 
 	}
 }
-void Function2(const vec3& V)
+
+struct Options
 {
-	std::cout << V << '\n';
-}
-void Function(const vec3& V)
+	std::string output_name = "Output.bmp";
+
+	int num_threads = 0;
+
+	int width=WIDTH, height=HEIGHT;
+	int samples_per_pixel=SAMPLES_PER_PIXEL;
+	int max_depth=MAX_DEPTH;
+	int direct_samples=DIRECT_SAMPLES;
+
+	int tile_size=16;
+	
+	float gamma=GAMMA;
+};
+
+const int OUTPUT_DELTA = 5000;
+class Renderer
 {
-	std::cout << V << '\n';
-	Function2(-V);
+public:
+	void initalize(const Options& options);
+	void render_image(const Camera& cam, const Scene& scene, const Options& options);
+
+
+
+
+private:
+	void output_image(const Options& options);
+
+	void add_to_buffer(int x, int y, vec3 color) {
+		float scale = 1.0 / samples;
+
+		color *= scale;
+		color.x = pow(color.x, 1 / GAMMA);
+		color.y = pow(color.y, 1 / GAMMA);
+		color.z = pow(color.z, 1 / GAMMA);
+
+		int idx = y * width * 3 + x * 3;
+		final_buffer[idx] = clamp(color.x, 0, 1) * 255;
+		final_buffer[idx + 1] = clamp(color.y, 0, 1) * 255;
+		final_buffer[idx + 2] = clamp(color.z, 0, 1) * 255;
+	}
+
+	void update_cli_completion_output(int increment) {
+		std::lock_guard<std::mutex> lock(output_lock);
+		completed_pixels += increment;
+
+		if ((completed_pixels - last_printed_pixel) > OUTPUT_DELTA) {
+			printf("Pixel: %*d / %d\r", 9, completed_pixels, width*height);
+
+			last_printed_pixel = completed_pixels;
+		}
+	}
+
+	int width,height;
+	int max_depth;
+	int samples;
+	int direct_samples;
+
+
+	std::mutex output_lock;
+	int completed_pixels;
+	int last_printed_pixel;
+
+	float gamma;
+
+	std::vector<u8> final_buffer;
+};
+class TileQueue
+{
+public:
+	TileQueue(int width, int height, int extent) : width(width), height(height), extent(extent) {
+		current_index = 0;
+		tile_width = ((width + extent - 1) / extent);
+		tile_height = ((height + extent - 1) / extent);
+		max_index = tile_width * tile_height;
+
+	}
+	bool next_tile(int& x0, int& x1, int& y0, int& y1) {
+		std::lock_guard<std::mutex> lock(mutex);
+		if (current_index >= max_index)
+			return false;
+
+		vec2i tile(current_index % tile_width, current_index / tile_width);
+
+		x0 = tile.x * extent;
+		x1 = imin(x0 + extent, width);
+		y0 = tile.y * extent;
+		y1 = imin(y0 + extent, height);
+
+		current_index ++;
+		return true;
+	}
+
+	const int width, height, extent;
+	int tile_width, tile_height;
+	int current_index;
+	int max_index;
+	std::mutex mutex;
+};
+void Renderer::initalize(const Options& options)
+{
+	width = options.width;
+	height = options.height;
+	max_depth = options.max_depth;
+	samples = options.samples_per_pixel;
+	direct_samples = options.direct_samples;
+
+	completed_pixels = 0;
+	last_printed_pixel = 0;
+
+	final_buffer.resize(width * height * 3);
 }
 
+void Renderer::render_image(const Camera& cam, const Scene& scene, const Options& options)
+{
+	initalize(options);
+	
+	std::vector<std::thread> threads;
+	TileQueue tq(options.width, options.height, options.tile_size);
+
+	double time_start = get_seconds();
+
+	int hardware_threads = std::thread::hardware_concurrency();
+	int used_threads = options.num_threads;
+	if (used_threads == 0)
+		used_threads = hardware_threads;
+	else if (used_threads < 0)
+		used_threads = imin(1, hardware_threads + used_threads);
+
+	for (int i = 0; i < used_threads; i++) {
+		threads.push_back(std::thread( [&](int thread_id) {
+			Random random(thread_id);
+			int x0, x1, y0, y1;
+			int pixel_counter = 0;
+			while (tq.next_tile(x0, x1, y0, y1)) {
+				for (int x = x0; x < x1; x++) {
+					for (int y = y0; y < y1; y++) {
+						vec3 pixel_total = vec3(0);
+
+						for (int sample = 0; sample < options.samples_per_pixel; sample++) {
+
+							vec2 coords = hammersley_2d(sample, options.samples_per_pixel);
+							coords += vec2(x, y);
+							Ray r = cam.get_ray(coords.x, coords.y);
+
+							vec3 s = get_ray_color(r, scene, options.max_depth);
+
+							pixel_total += s;
+						}
+
+						add_to_buffer(x, height-y-1, pixel_total);
+					}
+				}
+				
+				pixel_counter += (x1 - x0) * (y1 - y0);
+
+				if (pixel_counter > OUTPUT_DELTA) {
+					update_cli_completion_output(pixel_counter);
+					pixel_counter = 0;
+				}
+			}
+		}, i)
+		);
+	}
+	for (auto& t : threads)
+		t.join();
+
+	// Just get it displayed
+	completed_pixels = width * height;
+	last_printed_pixel = 0;
+	update_cli_completion_output(0);
+
+	double time_end = get_seconds();
+
+	std::cout << "\nDONE, seconds elapsed: " << time_end - time_start << '\n';
+
+
+	stbi_write_bmp(options.output_name.c_str(), width, height, 3, final_buffer.data());
+	printf("Output written: %s\n", options.output_name.c_str());
+
+}
 
 int main()
 {
-	//vec3 V = vec3(1.0);
-	//std::cout << V << '\n';
-	//Function(-V);
-
-	//return 0;
 
 	srand(time(NULL));
 
-	buffer[0] = new u8[WIDTH * HEIGHT * 3];
-	buffer[1] = new u8[WIDTH * HEIGHT * 3];
+	//buffer[0] = new u8[WIDTH * HEIGHT * 3];
+	//buffer[1] = new u8[WIDTH * HEIGHT * 3];
 
 	
 	Scene world;
 //	Camera cam;
-	Camera cam (vec3(0.15,0.8, 1.5), vec3(0.5,0.5,0), vec3(0, 1, 0), 45, ARATIO,0.01,4.0);
-	CameraSampler cs;
-	cornell_box_scene(world,cam,cs);
+	Camera cs;
+	outside_scene(world,cs);
+
+	Options options;
+
+	Renderer render;
+	render.render_image(cs, world, options);
+
+	return 0;
+
 	//checker_scene(world, cam);
 	
 	//Camera cam(vec3(12, 2, 3), vec3(0), vec3(0, 1, 0), 20, ARATIO,0.1,10.0);
@@ -923,52 +905,12 @@ int main()
 	ThreadState state;
 	state.complete = 0.0;
 	state.current_line = 0;
-	state.cam = &cam;
 	state.world = &world;
 	state.cs = &cs;
 
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	printf("Starting: ");
-#ifdef SINGLETHREAD
-	float complete = 0.0;
-	for (int y = 0; y < HEIGHT; y++) {
-		float percent = float(y) / (HEIGHT - 1);
-		if (percent >= complete) {
-			printf("%d...", int(round(percent * 10)));
-			complete += 0.1;
-		}
-		for (int x = 0; x < WIDTH; x++) {
-			vec3 total = vec3(0.0);
-			
-			// Variance calculation
-			int count;	// count
-			vec3 mean = vec3(0);
-			float mean_dist2 = 0;
-			float variance;
 
-			vec3 delta;
-
-			for (int s = 0; s < SAMPLES_PER_PIXEL; s++) {
-				count = s + 1;
-
-				float u = float(x+random_float()) / (WIDTH - 1);
-				float v = float(y+random_float()) / (HEIGHT - 1);
-				Ray r = cam.get_ray(u, v);
-				vec3 sample = ray_color(r, world,MAX_DEPTH);
-				total += sample;
-
-
-				delta = sample - mean;
-				mean += delta / (float)count;
-				mean_dist2 += dot(delta, delta) * (s>0);
-				variance = mean_dist2 / (count - 1);
-
-			}
-			write_out(total, x, (HEIGHT-1)-y, count);
-			write_out_no_scale(vec3(variance), x, (HEIGHT - 1) - y);
-		}
-	}
-#else
 	for (int i = 0; i < threads.size(); i++) {
 		threads[i] = std::thread(&calc_pixels, i, &state);
 	}
@@ -977,14 +919,9 @@ int main()
 	}
 
 
-#endif // SINGLETHREAD
-
-
-
 	printf("DONE\n");
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	std::cout << "Time elapsed = " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << " ms" << std::endl;
-	std::cout << "Num raycasts: " << NUM_RAYCASTS << '\n';
 	stbi_write_bmp(OUTPUT_NAME[0], WIDTH, HEIGHT,3, buffer[0]);
 
 	//stbi_write_bmp(OUTPUT_NAME[1], WIDTH, HEIGHT, 3, buffer[1]);

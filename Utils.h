@@ -1,6 +1,7 @@
 #ifndef UTILS_H
 #define UTILS_H
 #include <random>
+#include <chrono>
 #include "Math.h"
 
 inline float random_float()
@@ -141,6 +142,25 @@ inline vec2 hammersley_2d(unsigned int i, unsigned int N)
 }
 
 
+inline vec2 concentric_sample_disk(const vec2& u)
+{
+	vec2 offset = 2.f * u - vec2(1.f);
+	if (offset.x == 0 && offset.y == 0)
+		return vec2(0);
+	float theta, r;
+	if (abs(offset.x) > abs(offset.y)) {
+		r = offset.x;
+		theta = PI * 0.25 * (offset.y / offset.x);
+	}
+	else {
+		r = offset.y;
+		theta = PI * 0.25 * (offset.x / offset.y);
+	}
+	return r * vec2(cos(theta), sin(theta));
+}
 
+inline double get_seconds() {
+	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.f;
+}
 
 #endif // !UTILS_H
