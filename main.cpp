@@ -27,37 +27,13 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 100;
+const int SAMPLES_PER_PIXEL = 16;
 const int DIRECT_SAMPLES = 1;
-const int MAX_DEPTH = 10;
+const int MAX_DEPTH = 20;
 const float GAMMA = 2.2;
 
 const char* OUTPUT_NAME[2] = { "Output.bmp","Output2.bmp" };
 
-
-u8* buffer[2] = { nullptr,nullptr };
-void write_out(vec3 color, int x, int y, int samples, int file = 0) {
-	assert(x < WIDTH&& y < HEIGHT);
-	float scale = 1.0 / samples;
-
-	color *= scale;
-	color.x = pow(color.x, 1 / GAMMA);
-	color.y = pow(color.y, 1 / GAMMA);
-	color.z = pow(color.z, 1 / GAMMA);
-
-	int idx = y * WIDTH * 3 + x * 3;
-	buffer[file][idx] = clamp(color.x,0,1) * 255;
-	buffer[file][idx+1] = clamp(color.y,0,1)* 255;
-	buffer[file][idx+2] = clamp(color.z,0,1)* 255;
-}
-void write_out_no_scale(vec3 color, int x, int y, int file = 1)
-{
-	assert(x < WIDTH&& y < HEIGHT);
-	int idx = y * WIDTH * 3 + x * 3;
-	buffer[file][idx] = clamp(color.x, 0, 1) * 255;
-	buffer[file][idx + 1] = clamp(color.y, 0, 1) * 255;
-	buffer[file][idx + 2] = clamp(color.z, 0, 1) * 255;
-}
 
 enum AbstractLightType
 {
@@ -146,6 +122,7 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 
 			// Option B
 			float brdf_pdf;
+
 			vec3 f = si.material->Eval(si, ray_in.dir, light_dir, si.normal, &brdf_pdf);
 
 			float mis= power_heuristic(light_pdf, brdf_pdf);
@@ -177,7 +154,8 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 
 	for (bounces=0; bounces < MAX_DEPTH; bounces++)
 	{
-		bool intersection = world.trace_scene(r, 0, 1000, &si);
+		//bool intersection = world.trace_scene(r, 0, 1000, &si);
+		bool intersection=world.closest_hit(r, &si);
 
 		if (!intersection)
 		{
@@ -232,7 +210,8 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 		}
 #endif // DIRECT_HIT_DEBUG
 		float pdf;
-		vec3 f = material->Sample_Eval(si, r.dir, si.normal, &r, &pdf);
+		Ray next_ray;
+		vec3 f = material->Sample_Eval(si, r.dir, si.normal, &next_ray, &pdf);
 		if (abs(pdf)<0.000001) {
 			break;
 		}
@@ -259,6 +238,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 		//radiance += throughput * attenuation * direct;
 		throughput = throughput * f / pdf;// (attenuation * si.material->scattering_pdf(r.dir, si.normal) / pdf);
 
+		r = next_ray;
 		prev = si;
 		scatter_pdf = pdf;
 	}
@@ -279,9 +259,9 @@ void outside_scene(Scene& world, Camera& cs)
 	transform = translate(transform, vec3(0.5, 0.0, -0.5));
 	world.instances.push_back(Instance(
 		new TriangleMesh(import_mesh("bunny.obj")),
-		new Microfacet(nullptr, 0.3, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
+		//new Microfacet(nullptr, 0.3, 0),
+		new MatteMaterial(
+			new ConstantTexture(0.725, 0.71, 0.68)),
 		transform
 	));
 
@@ -329,8 +309,8 @@ void cornell_box_scene(Scene& world, Camera& cs)
 		),
 		vec3(0.5, 0.999, -0.5)));
 		//vec3(0.5, 0.75, 0)));
-		/*
-	
+		
+#if 0
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
@@ -356,8 +336,8 @@ void cornell_box_scene(Scene& world, Camera& cs)
 		//vec3(0.5, 0.75, 0)));
 
 		vec3(0.999, 0.4, -0.5)));
-
-		*/
+#endif
+		
 		
 	/*
 	world.instances.push_back(Instance(
@@ -397,8 +377,8 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	world.instances.push_back(Instance(
 		new Rectangle(normalize(vec3(0, 0, 1)), 1, 1),
 		new MatteMaterial(
-			new ConstantTexture(vec3(0.725, 0.71, 0.68))
-			//new CheckeredTexture(vec3(0.1,0.1,0.8),vec3(1),0.1)
+			//new ConstantTexture(vec3(0.725, 0.71, 0.68))
+			new CheckeredTexture(vec3(0.1,0.1,0.8),vec3(1),0.1)
 		),
 		//new Microfacet(nullptr, 0.5, 0),
 		vec3(0.5, 0.5, -1)));
@@ -467,18 +447,37 @@ void cornell_box_scene(Scene& world, Camera& cs)
 
 	));*/
 	
-	transform = scale(mat4(1),vec3(0.2));
-	//transform = rotate_x(transform, -15);
-	//transform = rotate_y(transform, 35);
+	transform = scale(mat4(1),vec3(0.26));
 
-	transform = translate(transform, vec3(0.5, 0.2, -0.5));
+	//transform = translate(transform, vec3(0.5, 0.1, -0.5));
+	//world.instances.push_back(Instance(
+	//	new TriangleMesh(import_mesh("bunny.obj")),
+	//	new GlassMaterial(1.5),
+	//	//new Microfacet(nullptr, 0.3, 0),
+	//	//new MatteMaterial(
+	//	//	new ConstantTexture(0.725, 0.71, 0.68)),
+	//	transform
+	//));
+
+	transform = mat4(1);
+	//transform = scale(mat4(1), vec3(0.17));
+	//transform = rotate_y(transform, 15);
+//	transform = rotate_x(transform, -20);
+	transform = translate(transform, vec3(0.5, 0.4, -0.5));
 	world.instances.push_back(Instance(
-		new TriangleMesh(import_mesh("bunny.obj")),
-		new Microfacet(nullptr, 0.7, 0),
+		new Sphere(0.2),
+		//new TriangleMesh(import_mesh("bunny.obj")),
+		//new Microfacet(nullptr, 0.1, 0),
+		//new DisneyDiffuse(vec3(0.5),0.9,0.99),
+		//new DisneyMetal(pow(rgb_to_float(255, 215, 0), 2.2),0.7,0.9),
+		new DisneyClearcoat(0.9),
+		//new DisneyGlass(vec3(1),0.3,0.5,1.5),
+		//new GlassMaterial(2.0),
 		//new MatteMaterial(
 		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		transform
 	));
+
 	/*
 	
 	transform = translate(mat4(1), vec3(0.5, 0.40, -0.6));
@@ -681,7 +680,7 @@ void calc_pixels(int thread_id, ThreadState* ts)
 				//variance = mean_dist2 / (count - 1);
 
 			}
-			write_out(total, x, (HEIGHT - 1) - line, count);
+			//write_out(total, x, (HEIGHT - 1) - line, count);
 			//write_out_no_scale(vec3(variance), x, (HEIGHT - 1) - line);
 		}
 
@@ -845,7 +844,7 @@ void Renderer::render_image(const Camera& cam, const Scene& scene, const Options
 				
 				pixel_counter += (x1 - x0) * (y1 - y0);
 
-				if (pixel_counter > OUTPUT_DELTA) {
+				if (pixel_counter > 1000) {
 					update_cli_completion_output(pixel_counter);
 					pixel_counter = 0;
 				}
@@ -876,60 +875,14 @@ int main()
 
 	srand(time(NULL));
 
-	//buffer[0] = new u8[WIDTH * HEIGHT * 3];
-	//buffer[1] = new u8[WIDTH * HEIGHT * 3];
-
-	
 	Scene world;
-//	Camera cam;
-	Camera cs;
-	outside_scene(world,cs);
-
+	Camera cam;
+	cornell_box_scene(world,cam);
+	world.build_top_level_bvh();
 	Options options;
-
-	Renderer render;
-	render.render_image(cs, world, options);
-
-	return 0;
-
-	//checker_scene(world, cam);
 	
-	//Camera cam(vec3(12, 2, 3), vec3(0), vec3(0, 1, 0), 20, ARATIO,0.1,10.0);
-	//random_scene(&world);
-
-	// Initalize threads
-	std::vector<std::thread> threads;
-	threads.resize( std::thread::hardware_concurrency());
-
-
-	ThreadState state;
-	state.complete = 0.0;
-	state.current_line = 0;
-	state.world = &world;
-	state.cs = &cs;
-
-	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-	printf("Starting: ");
-
-	for (int i = 0; i < threads.size(); i++) {
-		threads[i] = std::thread(&calc_pixels, i, &state);
-	}
-	for (int i = 0; i < threads.size(); i++) {
-		threads[i].join();
-	}
-
-
-	printf("DONE\n");
-	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-	std::cout << "Time elapsed = " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << " ms" << std::endl;
-	stbi_write_bmp(OUTPUT_NAME[0], WIDTH, HEIGHT,3, buffer[0]);
-
-	//stbi_write_bmp(OUTPUT_NAME[1], WIDTH, HEIGHT, 3, buffer[1]);
-
-
-	printf("Output written: %s\n", OUTPUT_NAME[0]);
-
-	delete[] buffer[0];
-	delete[] buffer[1];
+	Renderer render;
+	render.render_image(cam, world, options);
+	
 	return 0;
 }

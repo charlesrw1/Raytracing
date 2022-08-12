@@ -85,7 +85,13 @@ public:
 		return hit;
 	}
 
-	BVH top_level;
+	void build_top_level_bvh();
+
+	bool any_hit(Ray r) const;
+	bool closest_hit(Ray r, Intersection* res) const;
+
+
+	BVH tlas;
 	std::vector<Instance> instances;
 
 	std::vector<Instance> lights;	// analytic

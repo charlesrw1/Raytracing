@@ -4,7 +4,7 @@
 #include "Def.h"
 #include <vector>
 
-const float BVH_EPSILON = 0.0001f;
+const float BVH_EPSILON =  0.0001f;
 
 enum PartitionStrategy
 {
@@ -27,7 +27,7 @@ class BVHBuilder;
 class BVH
 {
 public:
-	static BVH build(const std::vector<Bounds>& bounds, PartitionStrategy strat);
+	static BVH build(const std::vector<Bounds>& bounds, int max_per_node);
 
 	std::vector<BVHNode> nodes;
 	std::vector<int> indicies;

@@ -207,7 +207,10 @@ inline vec3 vec_max(const vec3& a, const vec3& b)
 {
 	return vec3(fmax(a.x, b.x), fmax(a.y, b.y), fmax(a.z, b.z));
 }
-
+inline vec3 sqrt(const vec3& v)
+{
+	return vec3(sqrt(v.x), sqrt(v.y), sqrt(v.z));
+}
 // Vec4
 
 struct vec4

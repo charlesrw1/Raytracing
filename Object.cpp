@@ -18,12 +18,14 @@ void bvh_from_triangles(BVH* bvh, const Mesh& mesh)
 			mesh.verticies[mesh.indicies[i + 2]].position
 		));
 	}
-	*bvh = BVH::build(b, BVH_MIDDLE);
+	*bvh = BVH::build(b, 3);
 }
 
 TriangleMesh::TriangleMesh(const Mesh* mesh) : mesh(mesh)
 {
 	bvh_from_triangles(&bvh, *mesh);
+
+	mesh_bounds = bvh.nodes[0].aabb;
 	/*for (int i = 0; i < bvh.nodes.size(); i++) {
 		if (bvh.nodes[i].count == BVH_BRANCH)
 			continue;

@@ -42,8 +42,8 @@ void BVHBuilder::build_R(int start, int end, int node_number)
 	BVHNode* node = &nodes[node_number];
 	node->aabb = calc_bounds(start, end);
 
-	//node->aabb.min -= vec3(BVH_EPSILON);
-	//node->aabb.max += vec3(BVH_EPSILON);
+	//node->aabb.bmin -= vec3(BVH_EPSILON);
+	//node->aabb.bmax += vec3(BVH_EPSILON);
 
 	if (num_elements <= max_per_leaf) {
 		node->left_node = start;
@@ -77,9 +77,9 @@ void BVHBuilder::build_R(int start, int end, int node_number)
 }
 
 // Static builder function
-BVH BVH::build(const std::vector<Bounds>& bounds, PartitionStrategy strat)
+BVH BVH::build(const std::vector<Bounds>& bounds, int max_per_node)
 {
-	BVHBuilder builder(bounds,3);
+	BVHBuilder builder(bounds, max_per_node);
 
 	int start_node = builder.add_new_node();	// =0
 	builder.build_R(0, bounds.size(), start_node);

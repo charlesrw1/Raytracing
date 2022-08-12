@@ -10,7 +10,9 @@ class Geometry
 {
 public:
 	virtual ~Geometry() {}
-	//virtual Bounds object_bounds() const = 0;
+	virtual Bounds object_bounds() const {
+		return Bounds();
+	}
 	//virtual Bounds world_bounds() const;
 	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const = 0;
 	virtual float area() const {
@@ -26,7 +28,9 @@ class Sphere : public Geometry
 public:
 	Sphere(float radius)
 		: radius(radius) {}
-
+	virtual Bounds object_bounds() const {
+		return Bounds(vec3(-radius), vec3(radius));
+	}
 	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override {
 		vec3 center = vec3(0);
 
@@ -78,6 +82,18 @@ public:
 		B = normalize(cross(N, T));
 		u = u_length / 2;
 		v = v_length / 2;
+	}
+	virtual Bounds object_bounds() const {
+		
+		Bounds b(vec3(-u, 0, -v), vec3(u, 0, v));
+		mat4 rotation = mat4(
+			T.x, T.y, T.z, 0,
+			N.x, N.y, N.z, 0,
+			B.x, B.y, B.z, 0,
+			0, 0, 0, 1);
+		Transform t(rotation);
+		return b.transform_bounds(t);
+
 	}
 	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override {
 		// Intersect plane
@@ -329,7 +345,9 @@ class TriangleMesh : public Geometry
 {
 public:
 	TriangleMesh(const Mesh* mesh);
-
+	virtual Bounds object_bounds() const {
+		return mesh_bounds;
+	}
 	virtual bool intersect(Ray r, float tmin, float tmax, Intersection* si) const override 
 	{
 		const BVHNode* stack[64];
@@ -411,7 +429,7 @@ public:
 		vec3 N = bary.u * mesh->verticies[mesh->indicies[tri_vert_start]].normal +
 			bary.v * mesh->verticies[mesh->indicies[tri_vert_start + 1]].normal +
 			bary.w * mesh->verticies[mesh->indicies[tri_vert_start + 2]].normal;
-		si->set_face_normal(r, -normalize(N));
+		si->set_face_normal(r, normalize(N));
 		si->t = t;
 		return true;
 	}
@@ -470,10 +488,10 @@ public:
 		// Transform ray to model space
 		Ray model_space_ray = transform.to_model_ray(r);
 
-		si->material = material;
 		if (!geometry->intersect(model_space_ray, tmin, tmax, si))
 			return false;
 
+		si->material = material;
 		// transform hit to world space
 		si->point = transform.to_world_point(si->point);
 		si->normal = normalize(transform.to_world_normal(si->normal));
@@ -497,6 +515,13 @@ public:
 	const Material* get_material() const {
 		return material;
 	}
+
+	Bounds get_world_bounds() const {
+		Bounds bounds = geometry->object_bounds();
+		bounds = bounds.transform_bounds(transform);
+		return bounds;
+	}
+
 
 private:
 	Geometry* geometry = nullptr;

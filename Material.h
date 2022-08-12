@@ -159,6 +159,68 @@ private:
 	float metalness;
 };
 
+class DisneyDiffuse : public Material
+{
+public:
+	DisneyDiffuse(vec3 albedo, float roughness, float subsurface)
+		:albedo(albedo),roughness(roughness),subsurface(subsurface) {}
+
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override;
+
+private:
+	vec3 albedo;
+	float roughness;
+	float subsurface;
+};
+class DisneyMetal : public Material
+{
+public:
+	DisneyMetal(vec3 albedo, float roughness, float anisotropic)
+		:albedo(albedo), roughness(roughness), anisotropic(anisotropic) {}
+
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override;
+
+private:
+	vec3 albedo;
+	float roughness;
+	float anisotropic;
+};
+
+class DisneyClearcoat : public Material
+{
+public:
+	DisneyClearcoat(float clearcoat_gloss)
+		:clearcoat_gloss(clearcoat_gloss){}
+
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override;
+
+private:
+	float clearcoat_gloss;
+};
+
+class DisneyGlass : public Material
+{
+public:
+	DisneyGlass(vec3 albedo, float roughness, float anisotropic, float eta)
+		:albedo(albedo), roughness(roughness), anisotropic(anisotropic), eta(eta){}
+
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override;
+
+private:
+	vec3 albedo;
+	float roughness;
+	float anisotropic;
+
+	float eta;	// internal/external IOR
+};
 
 class MetalMaterial : public Material
 {
