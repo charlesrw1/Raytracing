@@ -204,11 +204,33 @@ private:
 	float clearcoat_gloss;
 };
 
+class RoughDielectric : public Material
+{
+public:
+	RoughDielectric(float eta,
+		float roughness,
+		vec3 specular_reflectance,
+		vec3 specular_transmittance)
+		: eta_i_e(eta), roughness(roughness),
+		specular_reflectance(specular_reflectance),
+		specular_transmittance(specular_transmittance)
+	{}
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+	virtual float PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const override;
+
+private:
+	float eta_i_e;	// internal IOR / external IOR
+	float roughness;
+	vec3 specular_reflectance;
+	vec3 specular_transmittance;
+};
+
 class DisneyGlass : public Material
 {
 public:
 	DisneyGlass(vec3 albedo, float roughness, float anisotropic, float eta)
-		:albedo(albedo), roughness(roughness), anisotropic(anisotropic), eta(eta){}
+		:albedo(albedo), roughness(roughness), anisotropic(anisotropic), eta_ie(eta){}
 
 	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
 	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
@@ -219,7 +241,7 @@ private:
 	float roughness;
 	float anisotropic;
 
-	float eta;	// internal/external IOR
+	float eta_ie;	// internal/external IOR
 };
 
 class MetalMaterial : public Material
@@ -278,15 +300,15 @@ public:
 		float cos_theta = fmin(dot(-in_dir, si.normal), 1.0);
 		float sin_theta = sqrt(1.f - cos_theta * cos_theta);
 
-		bool cant_refract = refrac_ratio * sin_theta > 1.f;
+		bool reflect_ = refrac_ratio * sin_theta > 1.f || reflectance(cos_theta, refrac_ratio) > random_float();
 		vec3 direction;
-		if (cant_refract)
-			direction = reflect(-in_dir, si.normal);
+		if (reflect_)
+			direction = reflect(in_dir, si.normal);
 		else
 			direction = refract(in_dir, si.normal, refrac_ratio);
 
 		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
-		*out_ray = Ray(si.point + si.normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
+		*out_ray = Ray(si.point + si.normal * ((reflect_) ? 0.001f : -0.001f), normalize(direction));
 		*pdf = 1;
 
 		return vec3(1);

@@ -403,7 +403,23 @@ float DielectricFresnel(vec3 V, vec3 L, vec3 H, float eta)
 
 	return (rs * rs + rp * rp) / 2;
 }
+float DielectricFresnel(float n_dot_i,float n_dot_t, float eta)
+{
+	float rs = (n_dot_i - eta * n_dot_t) / (n_dot_i + eta * n_dot_t);
+	float rp = (n_dot_i * eta - n_dot_t) / (n_dot_i * eta + n_dot_t);
 
+	return (rs * rs + rp * rp) / 2;
+}
+float DielectricFresnel(float n_dot_i, float eta)
+{
+	float n_dot_t_sq = 1 - (1 - n_dot_i * n_dot_i) / (eta * eta);
+	if (n_dot_t_sq < 0)
+		return 1;
+	float n_dot_t = sqrt(n_dot_t_sq);
+	return DielectricFresnel(abs(n_dot_i), n_dot_t, eta);
+}
+
+#if 0
 vec3 EvalDisneyRefraction(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay, vec3 base, float* pdf)
 {
 	float D = TrowbridgeReitzDistribution(H, ax, ay);
@@ -432,7 +448,6 @@ vec3 EvalDisneyReflection(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay,
 
 	return base*F * D * G / (4 * V.z);
 }
-
 
 vec3  DisneyGlass::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
 {
@@ -495,3 +510,211 @@ float DisneyGlass::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& norm
 {
 	return 0;
 }
+#endif
+
+/*
+
+float refrac_ratio = (si.front_face) ? (1.0 / index_r) : index_r;
+
+		float cos_theta = fmin(dot(-in_dir, si.normal), 1.0);
+		float sin_theta = sqrt(1.f - cos_theta * cos_theta);
+
+		bool cant_refract = refrac_ratio * sin_theta > 1.f;
+		vec3 direction;
+		if (cant_refract)
+			direction = reflect(-in_dir, si.normal);
+		else
+			direction = refract(in_dir, si.normal, refrac_ratio);
+
+		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
+		*out_ray = Ray(si.point + si.normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
+		*pdf = 1;
+
+		return vec3(1);
+
+
+*/
+
+vec3 EvalDisneyRefraction(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay, vec3 base, float* pdf)
+{
+	float D = TrowbridgeReitzDistribution(H, ax, ay);
+	float h_dot_in = dot(H, V);
+	float F = DielectricFresnel(h_dot_in, 1/eta);
+	float g1 = SmithOcclusionAni_(V, ax, ay);
+	float g2 = SmithOcclusionAni_(L, ax, ay);
+	float G = g1 * g2;
+
+	float h_dot_out = abs(dot(H, L));
+	float sqrt_denom = h_dot_in + eta * h_dot_out;
+	vec3 out = base * (1 - F) * D * G * eta * eta * abs(h_dot_out * h_dot_in) / (abs(V.z) * sqrt_denom * sqrt_denom);
+
+	float dh_dout = eta * eta * h_dot_out / (sqrt_denom * sqrt_denom);
+	*pdf = (1 - F) * D * g1 * abs(dh_dout * h_dot_in / V.z);
+
+	return out;
+}
+
+vec3 EvalDisneyReflection(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay, vec3 base, float* pdf)
+{
+	float h_dot_in = dot(H, V);
+	float F = DielectricFresnel(h_dot_in, 1/eta);
+	float D = TrowbridgeReitzDistribution(H, ax, ay);
+	float g1 = SmithOcclusionAni_(V, ax, ay);
+	float g2 = SmithOcclusionAni_(L, ax, ay);
+	float G = g1 * g2;
+
+	*pdf = F*D * g1 / (4 * V.z);
+
+	return base * F * D * G / (4 * V.z);
+
+}
+
+
+
+vec3  DisneyGlass::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
+{
+	float eta = (si.front_face) ? (1 / eta_ie) : eta_ie;
+	
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	float ax = max(0.001, roughness * roughness / aspect);
+	float ay = max(0.001, roughness * roughness * aspect);
+
+	vec3 T, B;
+	ONB(normal, T, B);
+	// To tangent space
+	vec3 V = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
+	vec3 H = sampleGGXVNDF(V, ax, ay);
+	vec3 L;
+	float h_dot_in = dot(H, V);
+	float F = DielectricFresnel(h_dot_in, 1/eta);
+	//F = reflectance(h_dot_in, eta);
+	bool do_reflect = F > random_float();
+	vec3 out;
+	if (do_reflect)
+	{
+		// reflect
+		L = normalize(reflect(-V, H));
+		vec3 world_out = to_world(L, normal, T, B);
+		*out_ray = Ray(si.point + si.normal * 0.00001, world_out);
+		out = EvalDisneyReflection(V, L, H, eta, ax, ay, albedo, pdf);
+	}
+	else {
+		// refract
+		L = normalize(refract(-V, H, eta));
+		vec3 world_out = to_world(L, normal, T, B);
+		*out_ray = Ray(si.point - si.normal * 0.00001, world_out);
+		out = EvalDisneyRefraction(V, L, H, eta, ax, ay, albedo, pdf);
+	}
+	return out;
+}
+vec3  DisneyGlass::Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const
+{
+	bool reflect = dot(normal, out_dir) <= 0;
+	float eta = (si.front_face) ? 1 / eta_ie : eta_ie;
+	
+	
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	float ax = max(0.001, roughness * roughness / aspect);
+	float ay = max(0.001, roughness * roughness * aspect);
+
+	vec3 T, B;
+	ONB(normal, T, B);
+	// To tangent space
+	vec3 V = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
+	vec3 L = vec3(dot(out_dir, T), dot(out_dir, B), dot(out_dir, normal));
+	vec3 H;
+	if (reflect) {
+		H = normalize(V + L);
+		return EvalDisneyReflection(V, L, H, eta, ax, ay, albedo, pdf);
+	}
+	else {
+		H = normalize(V + L * eta);
+		return EvalDisneyRefraction(V, L, H, eta, ax, ay, albedo, pdf);
+	}
+}
+float DisneyGlass::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const
+{
+	return 0;
+}
+
+
+vec3 RoughDielectric::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
+{
+	float eta = (si.front_face) ? 1 / eta_i_e : eta_i_e;
+
+	float alpha = roughness * roughness;
+	vec3 T, B;
+	ONB(normal, T, B);
+	// To tangent space
+	vec3 local_in = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
+	vec3 local_micro_normal = sampleGGXVNDF(local_in, alpha, alpha);
+
+	vec3 world_half_vec = to_world(local_micro_normal, normal, T, B);
+	float h_dot_in = dot(world_half_vec, -in_dir);
+	float F = DielectricFresnel(h_dot_in, eta);
+
+	float r1 = random_float();
+	bool reflect_ = r1 <= F;
+	if (reflect_) {
+		// Reflect
+		vec3 reflected = normalize(reflect(in_dir, world_half_vec));
+		*out_ray = Ray(si.point + si.normal * 0.00001f, reflected);
+	}
+	else {
+		// Refract
+
+		vec3 refracted = refract(in_dir, world_half_vec, eta);
+		*out_ray = Ray(si.point + si.normal * -0.00001f, normalize(refracted));
+	}
+
+	return Eval(si, in_dir, out_ray->dir, normal, pdf);
+}
+vec3 RoughDielectric::Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const
+{
+	bool reflect = dot(normal, out_dir) <=  0;
+	float eta = (si.front_face) ? 1 / eta_i_e : eta_i_e;
+	vec3 half_vec;
+	if (reflect)
+		half_vec = normalize(-in_dir + out_dir);
+	else
+		half_vec = normalize(-in_dir + out_dir * eta);
+
+
+	vec3 T, B;
+	ONB(normal, T, B);
+	// To tangent space
+	vec3 local_in = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
+	vec3 local_half = to_local(half_vec, normal, T, B);
+	vec3 local_out = to_local(out_dir, normal, T, B);
+
+	if (dot(half_vec, vec3(0, 0, 1)) < 0)
+		half_vec = -half_vec;
+
+	float h_dot_in = dot(half_vec, -in_dir);
+	float F = DielectricFresnel(h_dot_in, eta);
+	float alpha = roughness * roughness;
+	float D = TrowbridgeReitzDistribution(local_half, alpha, alpha);
+	float g1 = SmithOcclusionAni_(local_in, alpha, alpha);
+	float g2 = SmithOcclusionAni_(local_out, alpha, alpha);
+	float G = g1 * g2;
+
+	if (reflect)
+	{
+		vec3 out = specular_reflectance* (F * D * G) / (4 * abs(local_in.z));
+		*pdf = (F * D * g1) / (4 * abs(local_in.z));
+		return out;
+	}
+
+	else {
+		float h_dot_out = abs(dot(half_vec, out_dir));
+		float sqrt_denom = h_dot_in + eta * h_dot_out;
+		vec3 out = specular_transmittance*(1 - F) * D * G * eta * eta * abs(h_dot_out * h_dot_in) / (abs(local_in.z) * sqrt_denom * sqrt_denom);
+
+		float dh_dout = eta * eta * h_dot_out / (sqrt_denom * sqrt_denom);
+		*pdf= (1 - F) * D * g1 * abs(dh_dout * h_dot_in / local_in.z);
+
+		return out;
+	}
+
+}
+float RoughDielectric::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const { return 0; }

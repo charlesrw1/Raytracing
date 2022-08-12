@@ -17,8 +17,8 @@
 
 typedef unsigned char u8;
 typedef unsigned int u32;
-const int WIDTH = 512;
-const int HEIGHT = 512;
+const int WIDTH = 256;
+const int HEIGHT = 256;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -27,7 +27,7 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 16;
+const int SAMPLES_PER_PIXEL = 100;
 const int DIRECT_SAMPLES = 1;
 const int MAX_DEPTH = 20;
 const float GAMMA = 2.2;
@@ -141,7 +141,7 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 //#define PDF_DEBUG
 //#define DIRECT_ONLY_DEBUG
 
-//#define NORMAL_DEBUG
+//#define RAY_OUT_DEBUG
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -220,7 +220,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 #endif // BRDF_DEBUG
 
 #ifdef RAY_OUT_DEBUG
-		return pow((r.dir + 1) * 0.5, 2.2);
+		return pow((next_ray.dir + 1) * 0.5, 2.2);
 #endif
 #ifdef PDF_DEBUG
 		return pow(1/(2*pdf), 2.2);
@@ -460,19 +460,39 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//));
 
 	transform = mat4(1);
-	//transform = scale(mat4(1), vec3(0.17));
+	////transform = scale(mat4(1), vec3(0.17));
+	////transform = rotate_y(transform, 15);
+//	//transform = rotate_x(transform, -20);
+	//transform = translate(transform, vec3(0.75, 0.4, -0.5));
+	//world.instances.push_back(Instance(
+	//	new Sphere(0.15),
+	//	//new TriangleMesh(import_mesh("bunny.obj")),
+	//	//new Microfacet(nullptr, 0.1, 0),
+	//	//new DisneyDiffuse(vec3(0.5),0.9,0.99),
+	//	//new DisneyMetal(pow(rgb_to_float(255, 215, 0), 2.2),0.7,0.9),
+	//	//new DisneyClearcoat(0.9),
+	//	//new DisneyGlass(vec3(1),0.3,0.5,1.8),
+	//	//new RoughDielectric(1.1,0.3,vec3(1,0,0),vec3(1,1,1)),
+	//	new GlassMaterial(1.3),
+	//	//new MatteMaterial(
+	//	//	new ConstantTexture(0.725, 0.71, 0.68)),
+	//	transform
+	//));
+	transform = mat4(1);
+	transform = scale(mat4(1), vec3(0.2));
 	//transform = rotate_y(transform, 15);
 //	transform = rotate_x(transform, -20);
-	transform = translate(transform, vec3(0.5, 0.4, -0.5));
+	transform = translate(transform, vec3(0.5, 0.2, -0.5));
 	world.instances.push_back(Instance(
-		new Sphere(0.2),
-		//new TriangleMesh(import_mesh("bunny.obj")),
+		//new Sphere(0.15),
+		new TriangleMesh(import_mesh("bunny.obj")),
 		//new Microfacet(nullptr, 0.1, 0),
 		//new DisneyDiffuse(vec3(0.5),0.9,0.99),
 		//new DisneyMetal(pow(rgb_to_float(255, 215, 0), 2.2),0.7,0.9),
-		new DisneyClearcoat(0.9),
-		//new DisneyGlass(vec3(1),0.3,0.5,1.5),
-		//new GlassMaterial(2.0),
+		//new DisneyClearcoat(0.9),
+		new DisneyGlass(vec3(1),0.35,0.9,1.2),
+		//new RoughDielectric(1.1,0.3,vec3(1,0,0),vec3(1,1,1)),
+		//new GlassMaterial(1.8),
 		//new MatteMaterial(
 		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		transform

@@ -57,6 +57,15 @@ inline void ONB(const vec3& N, vec3& T, vec3& B)
 	T = normalize(cross(up, N));
 	B = cross(N, T);
 }
+inline vec3 to_local(const vec3& v, const vec3& n, const vec3& t, const vec3& b)
+{
+	return vec3(dot(v, t), dot(v, b), dot(v, n));
+}
+inline vec3 to_world(const vec3& v, const vec3& n, const vec3& t, const vec3& b)
+{
+	return v.x * t + v.y * b + v.z * n;
+}
+
 
 inline vec3 random_cosine()
 {
