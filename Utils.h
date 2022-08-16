@@ -172,4 +172,18 @@ inline double get_seconds() {
 	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() / 1000.f;
 }
 
+inline vec2 dir_to_spherical(vec3 V)
+{
+	vec2 uv = vec2(atan2(V.z, V.x), asin(V.y));
+	uv.x = uv.x * INV_2PI;
+	uv.y = uv.y * INV_PI;
+	uv += vec2(0.5);
+	return uv;
+}
+
+inline float luminance(vec3 rgb)
+{
+	return 0.212671f * rgb.x + 0.715160f * rgb.y + 0.072169f * rgb.z;
+}
+
 #endif // !UTILS_H

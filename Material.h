@@ -27,9 +27,10 @@ class CheckeredTexture : public Texture
 public:
 	CheckeredTexture(vec3 even, vec3 odd, float grid = 0.25f) : even(even), odd(odd), grid(PI / grid) {}
 	virtual vec3 sample(float u, float v, vec3 p) const override {
-		float sines = sin(grid * p.x) * sin(grid * p.y) * sin(grid * p.z);
+		bool odd_ = (modulo(u, grid) < grid * 0.5) ^ (modulo(v, grid) < grid * 0.5);
+		//float sines = sin(grid * p.x) * sin(grid * p.y) * sin(grid * p.z);
 		//uint8_t res = (fmod(fmod(p.x, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.y, mod)+mod,mod) < repeat) ^ (fmod(fmod(p.z, mod)+mod,mod) < repeat);
-		if (sines < 0)
+		if (odd_)
 			return odd;
 		return even;
 	}

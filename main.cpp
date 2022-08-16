@@ -11,14 +11,15 @@
 #include "Utils.h"
 #include "Def.h"
 #include "Scene.h"
+#include "Image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
 typedef unsigned char u8;
 typedef unsigned int u32;
-const int WIDTH = 256;
-const int HEIGHT = 256;
+const int WIDTH = 512;
+const int HEIGHT = 512;
 const float ARATIO = WIDTH / (float) HEIGHT;
 
 const float VIEW_HEIGHT = 2.0;
@@ -34,6 +35,128 @@ const float GAMMA = 2.2;
 
 const char* OUTPUT_NAME[2] = { "Output.bmp","Output2.bmp" };
 
+HDRImage* env;
+#define IMPORTANCE_SAMPLE_ENV
+
+class EnviormentLight
+{
+public:
+	EnviormentLight(HDRImage* img) : image(img)
+	{
+		build_cdf();
+	}
+
+	void build_cdf() {
+		int w = image->width;
+		int h = image->height;
+		std::vector<float> weights(w * h);
+
+		//float total_weight_y=0;
+		//cdf_x.resize(w * h);
+		//cdf_y.resize(h);
+		for (int y = 0; y < h; y++) {
+		//	float total_weight_x=0;
+			for (int x = 0; x < w; x++) {
+				weights[y*w+x]= luminance(image->get(x, y));
+				//cdf_x[y * w + x] = total_weight_x;
+			}
+			//for (int x = 0; x < w; x++)
+			//	cdf_x[y * w + x] /= total_weight_x;
+		
+			//total_weight_y += total_weight_x;
+			//cdf_y[y] = total_weight_y;
+		}
+		//for (int y = 0; y < h; y++)
+		//	cdf_y[y] /= total_weight_y;
+
+
+		cdf.resize(w * h);
+		cdf[0] = weights[0];
+		for (int i = 1; i < w * h; i++) {
+			cdf[i] = cdf[i - 1] + weights[i];
+		}
+
+		total_sum = cdf[w * h - 1];
+
+		for (int i = 1; i < w * h; i++) {
+			cdf[i] = cdf[i] / total_sum;
+		}
+
+
+
+	}
+	vec2 binary_search(float val) const {
+		int lower = 0;
+		int upper = image->height-1;
+		while (lower < upper) {
+			int mid = (lower + upper) /2;
+			if (val < cdf[(mid + 1) * image->width - 1])
+				upper = mid;
+			else
+				lower = mid+1;
+		}
+		int y = lower;
+		lower = 0;
+		upper = image->width - 1;
+		while (lower < upper) {
+			int mid = (lower + upper) /2;
+			if (val < cdf[y * image->width + mid])
+				upper = mid;
+			else
+				lower = mid+1;
+		}
+		int x = lower;
+		return vec2((float)x / image->width, (float)y / image->height);
+	}
+	vec3 eval(vec3 dir, float* pdf) const {
+		//float theta = acos(dir.y);
+		//vec2 uv = dir_to_spherical(dir);
+
+		float theta = acos(dir.y);
+		float phi = atan2(dir.z, dir.x);
+		float u = (PI + phi) / PI * 0.5;
+		float v = theta / PI;
+		vec2 uv(u, v);
+
+		vec3 color = image->lookup(uv.x, uv.y);
+		*pdf = luminance(color) / total_sum;
+
+		float sin_theta = sin(theta);
+		if (sin_theta == 0)
+			*pdf = 0;
+		else
+			*pdf *= image->width * image->height / (2 * PI * PI * sin_theta);
+
+		return color;
+	}
+	vec3 sample_eval(vec3* dir, float* pdf) const {
+		vec2 uv = binary_search(random_float());
+		vec3 color = image->lookup(uv.x, uv.y);
+		
+		float phi = uv.x * 2 * PI;
+		float theta = uv.y * PI;
+
+		*dir = vec3(-sin(theta) * cos(phi), cos(theta), -sin(theta) * sin(phi));
+		*pdf = luminance(color) / total_sum;
+		
+		float sin_theta = sin(theta);
+		if (sin_theta == 0)
+			*pdf = 0;
+		else
+			*pdf *= image->width * image->height / (2 * PI * PI * sin_theta);
+
+		return color; 
+	}
+
+	HDRImage* image;
+	//std::vector<float> cdf_x;
+	//std::vector<float> cdf_y;
+	std::vector<float> cdf;
+	float total_sum;
+};
+
+
+EnviormentLight* el_g;
 
 enum AbstractLightType
 {
@@ -80,6 +203,24 @@ vec3 shade_direct_abstract_NEE(const Intersection& si, const Scene& world, const
 vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray_in)
 {
 	vec3 direct = vec3(0);
+#ifdef IMPORTANCE_SAMPLE_ENV
+	if (el_g)
+	{
+		float env_pdf;
+		vec3 dir;
+		vec3 c = el_g->sample_eval(&dir, &env_pdf);
+		Intersection env_inter;
+		if (dot(dir, si.normal) > 0 && !world.trace_scene(Ray(si.point + si.normal * 0.0001, dir), 0, INFINITY, &env_inter))
+		{
+			float brdf_pdf;
+			vec3 f = si.material->Eval(si, ray_in.dir, dir, si.normal, &brdf_pdf);
+			float mis = power_heuristic(env_pdf, brdf_pdf);
+			direct += (mis * f * c) / env_pdf;
+		}
+	}
+#endif // IMPORTANCE_SAMPLE_ENV
+
+	
 	for (int i = 0; i < world.lights.size(); i++)
 	{
 		vec3 sample = 0;
@@ -139,9 +280,11 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 }
 
 //#define PDF_DEBUG
+//#define DIRECT_HIT_DEBUG
+
 //#define DIRECT_ONLY_DEBUG
 
-//#define RAY_OUT_DEBUG
+
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 {
 	Intersection si,prev;
@@ -159,7 +302,22 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 
 		if (!intersection)
 		{
-			radiance += throughput * world.background_color;
+#ifdef IMPORTANCE_SAMPLE_ENV
+
+			//vec2 Uv = dir_to_spherical(r.dir);
+			//vec3 background = env->lookup(Uv.x, Uv.y);
+			float env_pdf;
+			vec3 background = el_g->eval(r.dir,&env_pdf);
+			float mis_weight = 1.f;
+			if (bounces > 0)
+				mis_weight = power_heuristic(scatter_pdf, env_pdf);
+
+			radiance += throughput * background *mis_weight;// world.background_color;
+#else
+			vec2 Uv = dir_to_spherical(r.dir);
+			vec3 background = env->lookup(Uv.x, Uv.y);
+			radiance += throughput * background;
+#endif // IMPORTANCE_SAMPLE_ENV
 			break;
 		}
 #ifdef NORMAL_DEBUG
@@ -187,7 +345,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 			{
 				// MIS
 				float light_pdf = (prev.point-si.point).length_squared() / (denom);
-				weight = power_heuristic(brdf_pdf, light_pdf);
+				weight =  power_heuristic(brdf_pdf, light_pdf);
 				//weight = brdf_pdf / (brdf_pdf + light_pdf);
 
 				//if (prev.material->is_microfacet())
@@ -267,7 +425,7 @@ void outside_scene(Scene& world, Camera& cs)
 
 	world.background_color = vec3(0.5, 0.7, 1.0);// pow(rgb_to_float(244, 215, 193), 2.2);
 	cs = Camera(
-		look_at(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0)),
+		look_at(vec3(-1.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0)),
 		40, WIDTH, HEIGHT);
 
 };
@@ -287,7 +445,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
-		new Rectangle(vec3(0, -1, 0), 0.25, 0.25),
+		new Rectangle(vec3(0, -1, 0), 0.3, 0.3),
 
 		
 		new EmissiveMaterial(
@@ -295,22 +453,22 @@ void cornell_box_scene(Scene& world, Camera& cs)
 		),
 		//vec3(0.5, 0.75, 0)));
 
-		vec3(0.5, 0.999, -0.5)));
+		vec3(-0.1, 0.3, 0.1)));
 
 	world.lights.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
-		new Rectangle(vec3(0, -1, 0), 0.25, 0.25),
-		//new Rectangle(vec3(0, 0, -1), 0.25, 0.25),
+		new Rectangle(vec3(0, -1, 0), 0.3, 0.3),
+
 
 		new EmissiveMaterial(
-			vec3(17, 12, 4) * 2
-			//vec3(0.5)
+			vec3(17, 12, 4)
 		),
-		vec3(0.5, 0.999, -0.5)));
 		//vec3(0.5, 0.75, 0)));
-		
+
+		vec3(-0.1, 0.3, 0.1)));
 #if 0
+		
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
@@ -361,6 +519,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 		vec3(0.95, 0.5, -0.5)));
 
 		*/
+#if 0
 	world.instances.push_back(Instance(
 		new Rectangle(vec3(0, -1, 0), 1, 1),
 		new MatteMaterial(
@@ -397,6 +556,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 		),
 		vec3(1, 0.5, -0.5)));
 	// Tall box
+#endif
 	mat4 transform = mat4(1.f);
 	
 	/*
@@ -479,40 +639,54 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//	transform
 	//));
 	transform = mat4(1);
-	transform = scale(mat4(1), vec3(0.2));
+	//transform = scale(mat4(1), vec3(0.3));
 	//transform = rotate_y(transform, 15);
-//	transform = rotate_x(transform, -20);
-	transform = translate(transform, vec3(0.5, 0.2, -0.5));
-	world.instances.push_back(Instance(
-		//new Sphere(0.15),
-		new TriangleMesh(import_mesh("bunny.obj")),
-		//new Microfacet(nullptr, 0.1, 0),
-		//new DisneyDiffuse(vec3(0.5),0.9,0.99),
-		//new DisneyMetal(pow(rgb_to_float(255, 215, 0), 2.2),0.7,0.9),
-		//new DisneyClearcoat(0.9),
-		new DisneyGlass(vec3(1),0.35,0.9,1.2),
-		//new RoughDielectric(1.1,0.3,vec3(1,0,0),vec3(1,1,1)),
-		//new GlassMaterial(1.8),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		transform
-	));
+	////transform = rotate_x(transform, -20);
+	//transform = translate(transform, vec3(0.0, -0.2, 0));
+	//world.instances.push_back(Instance(
+	//	//new Sphere(0.15),
+	//	new TriangleMesh(import_mesh("bunny.obj")),
+	//	//new Microfacet(nullptr, 0.1, 0),
+	//	new DisneyDiffuse(vec3(0.725, 0.71, 0.68),0.5,0.5),
+	//	//new DisneyMetal(vec3(0.8,0.2,0.3),0.8,0.0),
+	//	//new DisneyClearcoat(0.9),
+	//	//new DisneyGlass(vec3(0.8),0.4,0.1,1.4),
+	//	//new RoughDielectric(1.1,0.3,vec3(1,0,0),vec3(1,1,1)),
+	//	//new GlassMaterial(1.8),
+	//	transform
+	//));
+	//
+	//
+	//transform = translate(mat4(1), vec3(-0.3, 0.0, -0.3));
+	//world.instances.push_back(Instance(
+	//	new Sphere(0.1),
+	//	//new Box(vec3(0.3, 0.3, 0.3)),
+	//	//new Cylinder(0.2,0.4),
+	//	//new GlassMaterial(2.0),
+	//	new DisneyMetal(vec3(0.8,0.2,0.3),0.2,0.0),
+	//	//new MatteMaterial(
+	//	//	new ConstantTexture(0.725, 0.71, 0.68)),
+	//	//new MetalMaterial(vec3(0.8),0.6),
+	//	transform
+	//
+	//));
 
-	/*
-	
-	transform = translate(mat4(1), vec3(0.5, 0.40, -0.6));
+	transform = translate(mat4(1), vec3(-0.35, 0.0, 0.35));
 	world.instances.push_back(Instance(
 		new Sphere(0.1),
 		//new Box(vec3(0.3, 0.3, 0.3)),
 		//new Cylinder(0.2,0.4),
 		//new GlassMaterial(2.0),
-		new Microfacet(nullptr, 0.4, 0),
+		//new DisneyMetal(vec3(0.8, 0.2, 0.3),0.3, 0.0),
+		new DisneyGlass(vec3(0.85), 0.05, 0.1, 1.4),
 		//new MatteMaterial(
 		//	new ConstantTexture(0.725, 0.71, 0.68)),
 		//new MetalMaterial(vec3(0.8),0.6),
 		transform
 
 	));
+
+	/*
 	transform = translate(mat4(1), vec3(0.75, 0.40, -0.6));
 	world.instances.push_back(Instance(
 		new Sphere(0.1),
@@ -590,8 +764,8 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//world.instances.back().print_matricies();
 	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
 	cs = Camera(
-		look_at(vec3(0.5, 0.5, 1.5), vec3(0.5, 0.5, -0.5), vec3(0, 1, 0)),
-		40, WIDTH, HEIGHT);
+		look_at(vec3(-1., 0.2, 1.), vec3(0.0, 0.2, 0), vec3(0, 1, 0)),
+		45, WIDTH, HEIGHT);
 }
 
 void checker_scene(Scene& world)
@@ -688,8 +862,6 @@ void calc_pixels(int thread_id, ThreadState* ts)
 				Ray r = ts->cs->get_ray(coords.x, coords.y);
 				vec3 sample = get_ray_color(r, *ts->world, MAX_DEPTH);
 
-				if (sample.x != sample.x)
-					sample = vec3(0);
 
 				total += sample;
 
@@ -855,6 +1027,9 @@ void Renderer::render_image(const Camera& cam, const Scene& scene, const Options
 
 							vec3 s = get_ray_color(r, scene, options.max_depth);
 
+							if (s.x != s.x)
+								s = vec3(0);
+
 							pixel_total += s;
 						}
 
@@ -894,6 +1069,13 @@ int main()
 {
 
 	srand(time(NULL));
+	env = load_hdr("vankleef.hdr");
+	if (!env)
+		return 1;
+	//env->downsample(0);
+
+	el_g = new EnviormentLight(env);
+
 
 	Scene world;
 	Camera cam;

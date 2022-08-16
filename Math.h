@@ -8,6 +8,7 @@
 
 const float PI = 3.1415926536;
 const float INV_PI = 1.0 / PI;
+const float INV_2PI = 1.0/(2*PI);
 
 inline float radians(float degrees)
 {
@@ -34,6 +35,16 @@ inline int imin(int a, int b)
 #define fmin min
 #define fmax max
 
+
+inline float modulo(float a, float b) {
+	float r = fmod(a, b);
+	return (r < 0) ? r + b : r;
+}
+
+inline int modulo(int a, int b) {
+	float r = a % b;
+	return (r < 0) ? r + b : r;
+}
 
 struct vec2i
 {

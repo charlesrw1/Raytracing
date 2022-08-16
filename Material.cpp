@@ -609,7 +609,7 @@ vec3  DisneyGlass::Sample_Eval(const Intersection& si, const vec3 in_dir, const 
 }
 vec3  DisneyGlass::Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const
 {
-	bool reflect = dot(normal, out_dir) <= 0;
+	bool reflect = dot(normal, out_dir) >= 0;
 	float eta = (si.front_face) ? 1 / eta_ie : eta_ie;
 	
 	
