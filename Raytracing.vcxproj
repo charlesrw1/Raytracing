@@ -152,6 +152,7 @@
     <ClInclude Include="..\3d-Engine\source\deps\include\stb_image\stb_image_write.h" />
     <ClInclude Include="BVH.h" />
     <ClInclude Include="Def.h" />
+    <ClInclude Include="Filter.h" />
     <ClInclude Include="Image.h" />
     <ClInclude Include="Material.h" />
     <ClInclude Include="Math.h" />

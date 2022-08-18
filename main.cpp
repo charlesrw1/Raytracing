@@ -28,9 +28,9 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 100;
+const int SAMPLES_PER_PIXEL = 128;
 const int DIRECT_SAMPLES = 1;
-const int MAX_DEPTH = 20;
+const int MAX_DEPTH = 4;
 const float GAMMA = 2.2;
 
 const char* OUTPUT_NAME[2] = { "Output.bmp","Output2.bmp" };
@@ -41,9 +41,10 @@ HDRImage* env;
 class EnviormentLight
 {
 public:
-	EnviormentLight(HDRImage* img) : image(img)
+	EnviormentLight(HDRImage* img, float degrees_offset) : image(img)
 	{
 		build_cdf();
+		offset = degrees_offset / 360.f;
 	}
 
 	void build_cdf() {
@@ -114,7 +115,7 @@ public:
 
 		float theta = acos(dir.y);
 		float phi = atan2(dir.z, dir.x);
-		float u = (PI + phi) / PI * 0.5;
+		float u = (PI + phi) / PI * 0.5 + offset;
 		float v = theta / PI;
 		vec2 uv(u, v);
 
@@ -133,6 +134,8 @@ public:
 		vec2 uv = binary_search(random_float());
 		vec3 color = image->lookup(uv.x, uv.y);
 		
+		uv.x -= offset;	
+
 		float phi = uv.x * 2 * PI;
 		float theta = uv.y * PI;
 
@@ -153,6 +156,8 @@ public:
 	//std::vector<float> cdf_y;
 	std::vector<float> cdf;
 	float total_sum;
+
+	float offset=0;
 };
 
 
@@ -282,7 +287,7 @@ vec3 shade_direct_NEE(const Intersection& si, const Scene& world, const Ray& ray
 //#define PDF_DEBUG
 //#define DIRECT_HIT_DEBUG
 
-//#define DIRECT_ONLY_DEBUG
+//#define NORMAL_DEBUG
 
 
 vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
@@ -338,7 +343,7 @@ vec3 get_ray_color(const Ray& cam_ray, const Scene& world, int max_depth)
 			float cos_light = max(dot(r.dir, -si.normal),0);
 			float area = world.instances[si.index].get_area();
 			float denom = area * cos_light;
-			if (denom <= 0) {
+			if (denom <= 0 || !si.front_face) {
 				weight = 0;
 			}
 			else
@@ -442,6 +447,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	world.abs_lights.push_back(AbstractLight(POINT, vec3(0.5, 0.8, -0.5), vec3(2, 0.5, 0.5)));
 	*/
 
+#if 0
 	world.instances.push_back(Instance(
 
 		//new Disk(vec3(0, -1, 0), 0.25),
@@ -453,7 +459,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 		),
 		//vec3(0.5, 0.75, 0)));
 
-		vec3(-0.1, 0.3, 0.1)));
+		vec3(-0.1, 0.68, 0.1)));
 
 	world.lights.push_back(Instance(
 
@@ -466,8 +472,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 		),
 		//vec3(0.5, 0.75, 0)));
 
-		vec3(-0.1, 0.3, 0.1)));
-#if 0
+		vec3(-0.1, 0.68, 0.1)));
 		
 	world.instances.push_back(Instance(
 
@@ -639,31 +644,81 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//	transform
 	//));
 	transform = mat4(1);
-	//transform = scale(mat4(1), vec3(0.3));
+	transform = scale(mat4(1), vec3(0.3));
 	//transform = rotate_y(transform, 15);
-	////transform = rotate_x(transform, -20);
-	//transform = translate(transform, vec3(0.0, -0.2, 0));
-	//world.instances.push_back(Instance(
-	//	//new Sphere(0.15),
-	//	new TriangleMesh(import_mesh("bunny.obj")),
-	//	//new Microfacet(nullptr, 0.1, 0),
-	//	new DisneyDiffuse(vec3(0.725, 0.71, 0.68),0.5,0.5),
-	//	//new DisneyMetal(vec3(0.8,0.2,0.3),0.8,0.0),
-	//	//new DisneyClearcoat(0.9),
-	//	//new DisneyGlass(vec3(0.8),0.4,0.1,1.4),
-	//	//new RoughDielectric(1.1,0.3,vec3(1,0,0),vec3(1,1,1)),
-	//	//new GlassMaterial(1.8),
-	//	transform
-	//));
-	//
-	//
+	//transform = rotate_x(transform, -20);
+	transform = translate(transform, vec3(0.0, -0.2, 0));
+	DisneyUber* du = new DisneyUber;
+	//du->base_color = vec3(0.7,0.6,0.5);
+	du->base_color = vec3(0.6, 0.05, 0.05);
+
+	du->roughness = 0.15;
+	du->subsurface = 0.5;
+	du->specular = 1.0;
+	du->specular_tint = 0.0;
+	du->metallic = 0.0;
+	du->anisotropic = 0.0;
+	TriangleMesh* dragon = new TriangleMesh(import_mesh("dragon.obj"));
+	world.instances.push_back(Instance(
+		//new Sphere(1),
+		dragon,
+		//new Microfacet(nullptr, 0.1, 0),
+		//new DisneyDiffuse(vec3(0.725, 0.71, 0.68),0.5,0.5),
+		//new DisneyDiffuse(vec3(0.8),0.5,0.5),
+		//new DisneyMetal(vec3(0.8,0.2,0.5),0.4,0.0),
+		du,
+		//new DisneySheen(vec3(0.1,0.1,0.5),0.3),
+		//new DisneyClearcoat(0.9),
+		//new DisneyGlass(vec3(1.0,0.9,0.8),0.2,0.1,2.0),
+		//new RoughDielectric(1.1,0.3,vec3(1,0,0),vec3(1,1,1)),
+		//new GlassMaterial(1.8),
+		transform
+	));
+#if 0
+	transform = mat4(1);
+	transform = scale(mat4(1), vec3(0.1));
+	transform = translate(transform, vec3(-0.3, -0.2, 0.3));
+	transform = rotate_y(transform, 15);
+	du = new DisneyUber;
+	du->base_color = vec3(0.7,0.6,0.5);
+	//du->base_color = vec3(0.6, 0.05, 0.05);
+
+	du->roughness = 0.5;
+	du->subsurface = 0.5;
+	du->specular = 1.0;
+	du->specular_tint = 0.0;
+	du->metallic = 0.8;
+	du->anisotropic = 0.0;
+	world.instances.push_back(Instance(
+		//new Sphere(1),
+		dragon,
+		//new Microfacet(nullptr, 0.1, 0),
+		//new DisneyDiffuse(vec3(0.725, 0.71, 0.68),0.5,0.5),
+		//new DisneyDiffuse(vec3(0.8),0.5,0.5),
+		//new DisneyMetal(vec3(0.8,0.2,0.5),0.4,0.0),
+		du,
+		//new DisneySheen(vec3(0.1,0.1,0.5),0.3),
+		//new DisneyClearcoat(0.9),
+		//new DisneyGlass(vec3(1.0,0.9,0.8),0.2,0.1,2.0),
+		//new RoughDielectric(1.1,0.3,vec3(1,0,0),vec3(1,1,1)),
+		//new GlassMaterial(1.8),
+		transform
+	));
+
+#endif
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(0, 1, 0), 1, 1),
+		new DisneyDiffuse(vec3(0.725, 0.71, 0.68),0.5,0.5),
+		vec3(0.0, -0.2, 0)));
+	
+	
 	//transform = translate(mat4(1), vec3(-0.3, 0.0, -0.3));
 	//world.instances.push_back(Instance(
 	//	new Sphere(0.1),
 	//	//new Box(vec3(0.3, 0.3, 0.3)),
 	//	//new Cylinder(0.2,0.4),
 	//	//new GlassMaterial(2.0),
-	//	new DisneyMetal(vec3(0.8,0.2,0.3),0.2,0.0),
+	//	//new DisneyMetal(vec3(0.8,0.2,0.3),0.2,0.0),
 	//	//new MatteMaterial(
 	//	//	new ConstantTexture(0.725, 0.71, 0.68)),
 	//	//new MetalMaterial(vec3(0.8),0.6),
@@ -671,20 +726,6 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//
 	//));
 
-	transform = translate(mat4(1), vec3(-0.35, 0.0, 0.35));
-	world.instances.push_back(Instance(
-		new Sphere(0.1),
-		//new Box(vec3(0.3, 0.3, 0.3)),
-		//new Cylinder(0.2,0.4),
-		//new GlassMaterial(2.0),
-		//new DisneyMetal(vec3(0.8, 0.2, 0.3),0.3, 0.0),
-		new DisneyGlass(vec3(0.85), 0.05, 0.1, 1.4),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(0.8),0.6),
-		transform
-
-	));
 
 	/*
 	transform = translate(mat4(1), vec3(0.75, 0.40, -0.6));
@@ -764,9 +805,122 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//world.instances.back().print_matricies();
 	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
 	cs = Camera(
-		look_at(vec3(-1., 0.2, 1.), vec3(0.0, 0.2, 0), vec3(0, 1, 0)),
+		look_at(vec3(-1., 0.2, 1), vec3(0.0, 0.2, 0), vec3(0, 1, 0)),
+		//look_at(vec3(24., 0.8, 0.), vec3(20, 1.8, 0), vec3(0, 1, 0)),
+
 		45, WIDTH, HEIGHT);
 }
+
+void BallTestScene(Scene& world, Camera& cam)
+{
+	mat4 transform = mat4(1);
+
+
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(0, 1, 0), 0.7, 3),
+		new DisneyDiffuse(vec3(0.7), 0.4, 0.5),
+		vec3(0)
+
+	));
+
+
+	DisneyUber* uber = new DisneyUber;
+	uber->base_color = vec3(0.6,0.05,0.05);
+	uber->specular = 1.0;
+	uber->roughness = 0.1;
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		uber,
+		vec3(0,0.1,0)
+	));
+
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		//new GlassMaterial(1.5),
+		new DisneyGlass(vec3(1),0.01,0,1.5),
+		vec3(0, 0.1, 0.25)
+	));
+	uber = new DisneyUber;
+	uber->base_color = vec3(0.7);
+	uber->roughness = 0.6;
+	uber->specular = 1.0;
+	uber->metallic = 0.8;
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		uber,
+		vec3(0, 0.1, -0.25)
+	));
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		new DisneyDiffuse(vec3(0.7), 0.5, 0.5),
+		vec3(0, 0.1, -0.5)
+	));
+
+	world.instances.push_back(Instance(
+		new Sphere(0.1),
+		new DisneyMetal(vec3(0.7),0.1,0.0),
+		vec3(0, 0.1, 0.5)
+	));
+
+	cam = Camera(
+		look_at(vec3(-1.4, 0.7, 0), vec3(0.0, 0.2, 0), vec3(0, 1, 0)),
+		//look_at(vec3(24., 0.8, 0.), vec3(20, 1.8, 0), vec3(0, 1, 0)),
+
+		45, WIDTH, HEIGHT);
+}
+
+void Sponza(Scene& world, Camera& cam)
+{
+	mat4 transform = mat4(1);
+	transform = scale(transform, vec3(0.05));
+	world.instances.push_back(Instance(
+		new TriangleMesh(import_mesh("sponza.obj")),
+		new DisneyDiffuse(vec3(0.7), 0.5, 0.5),
+		transform
+	));
+	cam = Camera(
+		look_at(vec3(40, 20.0, 0), vec3(0.0, 8.0, 0), vec3(0, 1, 0)),
+		//look_at(vec3(24., 0.8, 0.), vec3(20, 1.8, 0), vec3(0, 1, 0)),
+
+		45, WIDTH, HEIGHT);
+}
+
+void Conference(Scene& world, Camera& cam)
+{
+	world.instances.push_back(Instance(
+		new Rectangle(vec3(0, -1, 0), 0.3, 1.3),
+		new EmissiveMaterial(
+			vec3(17, 12, 4)
+		),
+		vec3(2.5, 1.93, -1.0)));
+
+	world.lights.push_back(Instance(
+		new Rectangle(vec3(0, -1, 0), 0.3, 1.3),
+		new EmissiveMaterial(
+			vec3(17, 12, 4)
+		),
+		vec3(2.5, 1.93, -1.0)));
+
+	mat4 transform = mat4(1);
+	transform = scale(transform, vec3(0.003));
+	DisneyUber* uber = new DisneyUber;
+	uber->base_color = vec3(0.7);
+	uber->specular = 0.9;
+	uber->roughness = 0.5;
+	uber->metallic = 0.7;
+	world.instances.push_back(Instance(
+		new TriangleMesh(import_mesh("conference.obj")),
+		//new DisneyDiffuse(vec3(0.7),0.5,0.5),
+		new DisneyMetal(vec3(0.7),0.5,0.01),
+		transform
+	));
+	cam = Camera(
+		look_at(vec3(4.5, 1, -2.0), vec3(1.0, 1.0, 0), vec3(0, 1, 0)),
+		//look_at(vec3(24., 0.8, 0.), vec3(20, 1.8, 0), vec3(0, 1, 0)),
+
+		55, WIDTH, HEIGHT);
+}
+
 
 void checker_scene(Scene& world)
 {
@@ -1069,17 +1223,20 @@ int main()
 {
 
 	srand(time(NULL));
-	env = load_hdr("vankleef.hdr");
+	env = load_hdr("loft.hdr");
 	if (!env)
 		return 1;
-	//env->downsample(0);
 
-	el_g = new EnviormentLight(env);
+	//env->downsample(4);
 
+	el_g = new EnviormentLight(env,90);
 
 	Scene world;
 	Camera cam;
-	cornell_box_scene(world,cam);
+	BallTestScene(world, cam);
+	//cornell_box_scene(world,cam);
+	//Sponza(world, cam);
+	//Conference(world, cam);
 	world.build_top_level_bvh();
 	Options options;
 	

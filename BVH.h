@@ -9,7 +9,6 @@ const float BVH_EPSILON =  0.0001f;
 enum PartitionStrategy
 {
 	BVH_MIDDLE,
-	BVH_MEDIAN,
 	BVH_SAH
 };
 
@@ -27,7 +26,7 @@ class BVHBuilder;
 class BVH
 {
 public:
-	static BVH build(const std::vector<Bounds>& bounds, int max_per_node);
+	static BVH build(const std::vector<Bounds>& bounds, int max_per_node, PartitionStrategy strat);
 
 	std::vector<BVHNode> nodes;
 	std::vector<int> indicies;

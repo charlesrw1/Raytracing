@@ -3,6 +3,7 @@
 #include <vector>
 #include "Math.h"
 
+
 template< typename T >
 class Image
 {
@@ -68,8 +69,9 @@ public:
 		int vfi = modulo((int)v, height);
 		int uci = modulo(ufi + 1, width);
 		int vci = modulo(vfi + 1, height);
-		float uoff = u - ufi;
-		float voff = v - vfi;
+		float integral;
+		float uoff = modf(u - ufi,&integral);
+		float voff = modf(v - vfi,&integral);
 		vec3 val_ff = get(ufi, vfi);
 		vec3 val_fc = get(ufi, vci);
 		vec3 val_cf = get(uci, vfi);

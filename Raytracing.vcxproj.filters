@@ -74,5 +74,8 @@
     <ClInclude Include="Image.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="Filter.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

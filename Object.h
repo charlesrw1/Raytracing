@@ -127,6 +127,7 @@ public:
 		return (2 * u) * (2 * v);
 	}
 	virtual void sample_point(const vec3& from, vec3& point, vec3& normal) const override{
+
 		float r1 = random_float(-1,1);
 		float r2 = random_float(-1,1);
 		point = vec3(0);

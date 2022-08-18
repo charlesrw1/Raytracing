@@ -8,7 +8,7 @@ void Scene::build_top_level_bvh()
 	for (int i = 0; i < instances.size(); i++)
 		bounds.push_back(instances[i].get_world_bounds());
 
-	tlas = BVH::build(bounds, 1);
+	tlas = BVH::build(bounds, 1, BVH_SAH);
 
 }
 

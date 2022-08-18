@@ -18,7 +18,7 @@ void bvh_from_triangles(BVH* bvh, const Mesh& mesh)
 			mesh.verticies[mesh.indicies[i + 2]].position
 		));
 	}
-	*bvh = BVH::build(b, 3);
+	*bvh = BVH::build(b, 1,BVH_SAH);
 }
 
 TriangleMesh::TriangleMesh(const Mesh* mesh) : mesh(mesh)

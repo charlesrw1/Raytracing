@@ -54,7 +54,8 @@ Mesh* import_mesh(const char* obj_file)
 		}
 		else if (buffer == "vt") {
 			vec2 uv;
-			infile >> uv.x >> uv.y;
+			float trash;
+			infile >> uv.x >> uv.y >> trash;
 			uvs.push_back(uv);
 		}
 		else if (buffer == "vn") {

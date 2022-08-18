@@ -217,6 +217,8 @@ float DisneyDiffuse::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& no
 	return max(dot(normal, out_dir), 0.f) / PI;
 }
 
+
+
 ////////// Metal //////////
 
 
@@ -557,7 +559,7 @@ vec3 EvalDisneyRefraction(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay,
 vec3 EvalDisneyReflection(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay, vec3 base, float* pdf)
 {
 	float h_dot_in = dot(H, V);
-	float F = DielectricFresnel(h_dot_in, 1/eta);
+	float F = DielectricFresnel(h_dot_in, eta);
 	float D = TrowbridgeReitzDistribution(H, ax, ay);
 	float g1 = SmithOcclusionAni_(V, ax, ay);
 	float g2 = SmithOcclusionAni_(L, ax, ay);
@@ -718,3 +720,183 @@ vec3 RoughDielectric::Eval(const Intersection& si, const vec3& in_dir, const vec
 
 }
 float RoughDielectric::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const { return 0; }
+
+
+vec3 DisneySheen::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
+{
+	vec3 scatter_dir = random_cosine();
+	vec3 T, B;
+	ONB(normal, T, B);
+	scatter_dir = scatter_dir.x * T + scatter_dir.y * B + scatter_dir.z * normal;
+	*out_ray = Ray(si.point + normal * 0.001f, scatter_dir);
+	return Eval(si, in_dir, scatter_dir, normal, pdf);
+}
+vec3 DisneySheen::Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const
+{
+	*pdf = max(dot(normal, out_dir), 0.f) / PI;;
+
+	vec3 half = normalize(-in_dir + out_dir);
+
+	float denom = luminance(base_color);
+	if (denom < 0)denom = 1;
+	vec3 tint = base_color / denom;
+	vec3 c_sheen = (1 - sheen_tint) + sheen_tint * tint;
+	vec3 f_sheen = c_sheen * pow(1 - abs(dot(half, out_dir)), 5) * dot(normal, out_dir);
+
+	return f_sheen;
+}
+
+//////////// UBER ///////////////
+
+vec3 DisneyUber::EvalDiffuse(const Intersection& si, const vec3& V, const vec3& L, const vec3& H, float* pdf) const
+{
+	*pdf = max(L.z, 0.f) / PI;
+
+	float HdotOut = max(dot(H, L), 0);
+	float NdotOut = max(L.z, 0);
+	float NdotIn = max(V.z, 0);
+
+
+	float Fd90 = 0.5f + 2.f * roughness * HdotOut * HdotOut;
+	vec3 f_base_diffuse = base_color / PI * DiffuseFresnel(NdotIn, Fd90) * DiffuseFresnel(NdotOut, Fd90) * NdotOut;
+
+	float Fss90 = roughness * HdotOut * HdotOut;
+	vec3 f_subsurface = (1.25 * base_color) / PI * (DiffuseFresnel(NdotIn, Fss90) * DiffuseFresnel(NdotOut, Fss90) * (1.f / (NdotIn + NdotOut) - 0.5f) + 0.5f) * NdotOut;
+
+	vec3 diffuse = (1 - subsurface) * f_base_diffuse + subsurface * f_subsurface;
+
+	return diffuse *(1 - specular_transmission)* (1 - metallic);
+}
+
+vec3 DisneyUber::EvalMetal(const Intersection& si, const vec3& V, const vec3& L, const vec3& H, float eta, float ax, float ay, float* pdf) const
+{
+	vec3 c_tint = base_color / luminance(base_color);
+	vec3 ks = (1 - specular_tint) + specular_tint * c_tint;
+	vec3 C0 = specular * R0(eta) * (1 - metallic) * ks + metallic * base_color;
+	vec3 F = C0 + (1 - C0) * pow(1 - (max(dot(L, H), 0)), 5);
+
+	//vec3 F = FresnelSchlick(max(dot(V, H), 0), base_color);
+	float D = TrowbridgeReitzDistribution(H, ax, ay);
+	float g1 = SmithOcclusionAni_(V, ax, ay);
+	float g2 = SmithOcclusionAni_(L, ax, ay);
+	float G = g1 * g2;
+
+	*pdf = D * g1 / (4 * V.z);
+
+	vec3 f= F * D * G / (4 * V.z);
+
+	return f * (1 - specular_transmission * (1 - metallic));
+}
+
+vec3 DisneyUber::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
+{
+	vec3 T, B;
+	ONB(normal, T, B);
+	// To tangent space
+	vec3 V = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
+
+	float diffuse_weight = (1 - metallic) * (1 - specular_transmission);
+	float metal_weight = (1 - specular_transmission * (1 - metallic));
+	float glass_weight = (1 - metallic) * specular_transmission;
+	float clearcoat_weight = 0.25 * clearcoat;
+	if (!si.front_face)
+		diffuse_weight = metal_weight = clearcoat_weight = 0;
+
+	float cdf[4];
+	cdf[0] = diffuse_weight;
+	cdf[1] = cdf[0] + metal_weight;
+	cdf[2] = cdf[1] + glass_weight;
+	cdf[3] = cdf[2] + clearcoat_weight;
+	
+	float sum = cdf[3];
+	float lobe = random_float()*sum;
+
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	float ax = max(0.001, roughness * roughness / aspect);
+	float ay = max(0.001, roughness * roughness * aspect);
+
+	float eta = (si.front_face) ? 1 / ior : ior;
+
+	*pdf = 0;
+	vec3 f = vec3(0);
+	if (lobe < cdf[0]) /* Diffuse */
+	{
+		vec3 L = random_cosine();
+		vec3 scatter_dir = L.x * T + L.y * B + L.z * normal;
+		*out_ray = Ray(si.point + normal * 0.001f, scatter_dir);
+
+		f = EvalDiffuse(si,V, L, normalize(V + L), pdf);
+		*pdf = (*pdf) * (diffuse_weight / sum);
+	}
+	else if (lobe < cdf[1]) /* Specular reflection/Metallic */
+	{
+		vec3 T, B;
+		ONB(normal, T, B);
+		// To tangent space
+		vec3 H = sampleGGXVNDF(V, ax, ay);
+		vec3 L = reflect(-V, H);
+		vec3 scatter_dir = L.x * T + L.y * B + L.z * normal;
+		*out_ray = Ray(si.point + normal * 0.001f, scatter_dir);
+
+		f = EvalMetal(si,V, L, H, eta, ax, ay, pdf);
+
+		*pdf *= (metal_weight / sum);
+	}
+	//else if (lobe < cdf[2])
+	//{
+	//
+	//}
+	//// clearcoat
+	//else
+	//{
+	//
+	//}
+
+
+	return f;
+}
+vec3 DisneyUber::Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const
+{
+	vec3 T, B;
+	ONB(normal, T, B);
+	// To tangent space
+	vec3 V = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
+	vec3 L = vec3(dot(out_dir, T), dot(out_dir, B), dot(out_dir, normal));
+	vec3 H = normalize(V + L);
+
+	float diffuse_weight = (1 - metallic) * (1 - specular_transmission);
+	float metal_weight = (1 - specular_transmission * (1 - metallic));
+	float glass_weight = (1 - metallic) * specular_transmission;
+	float clearcoat_weight = 0.25 * clearcoat;
+	if (!si.front_face)
+		diffuse_weight = metal_weight = clearcoat_weight = 0;
+
+	float sum = diffuse_weight + metal_weight + glass_weight + clearcoat_weight;
+	diffuse_weight /= sum;
+	metal_weight /= sum;
+	glass_weight /= sum;
+	clearcoat_weight /= sum;
+
+	float aspect = sqrt(1.0 - anisotropic * 0.9);
+	float ax = max(0.001, roughness * roughness / aspect);
+	float ay = max(0.001, roughness * roughness * aspect);
+
+	float eta = (si.front_face) ? 1 / ior : ior;
+
+	float pdf_;
+	float total_pdf = 0;
+	vec3 f = vec3(0);
+	if (diffuse_weight > 0)
+	{
+		f += EvalDiffuse(si, V, L, H, &pdf_);
+		total_pdf += pdf_ * diffuse_weight ;
+	}
+	if (metal_weight > 0)
+	{
+		f += EvalMetal(si, V, L, H, eta, ax, ay, &pdf_);
+		total_pdf += pdf_ * metal_weight;
+	}
+	*pdf = total_pdf;
+
+	return f;
+}

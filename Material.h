@@ -205,6 +205,49 @@ private:
 	float clearcoat_gloss;
 };
 
+class DisneySheen : public Material
+{
+public:
+	DisneySheen(vec3 base, float sheen_tint)
+		:base_color(base),sheen_tint(sheen_tint) {}
+
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+
+private:
+	vec3 base_color;
+	float sheen_tint;
+};
+
+class DisneyUber : public Material
+{
+public:
+
+	virtual vec3 Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const override;
+	virtual vec3 Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const override;
+
+
+	vec3 EvalDiffuse(const Intersection& si,const vec3& V, const vec3& L, const vec3& H, float* pdf) const;
+	vec3 EvalMetal(const Intersection& si, const vec3& V, const vec3& L, const vec3& H, float eta, float ax, float ay, float* pdf) const;
+	vec3 EvalGlass(const Intersection& si, const vec3& V, const vec3& L, const vec3& H, float eta, float* pdf) const;
+	vec3 EvalClearcoat(const Intersection& si, const vec3& V, const vec3& L, const vec3& H, float* pdf) const;
+
+	vec3 base_color = vec3(0);
+	float specular_transmission = 0;
+	float metallic=0;
+	float subsurface=0;
+	float specular = 0;
+	float roughness=0;
+	float specular_tint=0;
+	float anisotropic=0;
+	float sheen=0;
+	float sheen_tint=0;
+	float clearcoat=0;
+	float clearcoat_gloss=0;
+
+	float ior = 1.0;
+};
+
 class RoughDielectric : public Material
 {
 public:

@@ -3,8 +3,8 @@
 
 #include "Def.h"
 #include "Object.h"
+#include "Filter.h"
 #include <vector>
-
 
 class Camera
 {
@@ -14,7 +14,8 @@ public:
 		const mat4& view_matrix,
 		float fov,
 		int width,
-		int height
+		int height,
+		Filter* filter = nullptr
 	)
 	{
 		mat4 raster_to_screen = mat4(
@@ -34,13 +35,45 @@ public:
 
 		raster_to_world = view_matrix * screen_to_camera * raster_to_screen;
 		camera_pos = view_matrix[3].xyz();
+
+		if (filter==nullptr)
+			this->filter = new GaussianFilter(0.5);
+		else
+			this->filter = filter;
 	}
+	~Camera() {
+		std::cout << filter << '\n';
+		delete filter;
+	}
+	Camera& operator=(Camera&& other) {
+		delete filter;
+
+		filter = other.filter;
+		camera_pos = other.camera_pos;
+		raster_to_world = other.raster_to_world;
+
+		other.filter = nullptr;
+		return *this;
+	}
+
+
 	Ray get_ray(float raster_x, float raster_y) const {
-		vec3 pos = (raster_to_world * vec4(raster_x, raster_y, 0, 1)).xyz();
+		float dx = raster_x - floor(raster_x);
+		float dy = raster_y - floor(raster_y);
+
+		vec2 offset = filter->sample(dx, dy);
+		vec2 remapped = vec2(floor(raster_x), floor(raster_y)) + vec2(0.5) + offset;
+
+
+		vec3 pos = (raster_to_world * vec4(remapped.x, remapped.y, 0, 1)).xyz();
+		//vec3 pos = (raster_to_world * vec4(raster_x, raster_y, 0, 1)).xyz();
+
+
 
 		return Ray(camera_pos, normalize(pos - camera_pos));
 	}
 
+	Filter* filter = nullptr;
 
 	vec3 camera_pos;
 	mat4 raster_to_world;
