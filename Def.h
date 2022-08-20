@@ -8,8 +8,6 @@ using u32 = unsigned int;
 
 class Material;
 
-#define CUSTOM_COLOR_DEBUG
-
 struct Intersection
 {
 	Intersection() {}
@@ -39,11 +37,6 @@ struct Intersection
 		front_face = true;
 		normal = (front) ? outward : -outward;
 	}
-
-#ifdef CUSTOM_COLOR_DEBUG
-	bool use_custom = false;
-	vec3 custom;
-#endif // CUSTOM_COLOR_DEBUG
 };
 
 #endif // !DEF_H

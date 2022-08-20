@@ -54,11 +54,6 @@ public:
 		return true;
 	}
 	
-	
-	/*
-	virtual Bounds object_bounds() const override {
-		return Bounds(vec3(-radius), vec3(radius));
-	}*/
 
 private:
 	float radius;
@@ -134,15 +129,6 @@ public:
 		point = T * u * r1 + B * v * r2;
 		normal = N;
 	}
-	/*
-	virtual Bounds object_bounds() const override {
-		Bounds b(T * -u);
-		b = bounds_union(b, T * u);
-		b = bounds_union(b, B * -v);
-		b = bounds_union(b, B * v);
-
-		return b;
-	}*/
 private:
 	vec3 N, T, B;// normal, tangent, bitangent
 	float u, v;	// half side lengths
@@ -256,71 +242,6 @@ private:
 	float ymin, ymax;
 };
 
-inline bool RayTriangleIntersection(const vec3& p, const vec3& dir, const vec3& a, const vec3& b, const vec3& c, 
-	vec3* uvw, float* t_out, vec3* n_out)
-{
-	const float EPSILON = 0.0000001;
-	/*
-	vec3 ab = b - a;
-	vec3 ac = c - a;
-	vec3 n = cross(ab, ac);
-	float d = dot(-dir, n);
-	float ood = 1.f / d;
-	vec3 ap = p - a;
-	*t = dot(ap, n) * ood;
-	if (*t < 0)
-		return false;
-	vec3 e = cross(-dir, ap);
-	uvw->v = dot(ac, e) * ood;
-	if (uvw->v < 0 || uvw->v > 1)
-		return false;
-	uvw->w = dot(ab, e);
-	if (uvw->w < 0 || uvw->w + uvw->v>1)
-		return false;
-	uvw->u = 1 - uvw->v - uvw->w;
-	return true;
-	*/
-
-	vec3 ab = b - a;
-	vec3 ac = c - a;
-	vec3 N = (cross(ab, ac));
-	float area = N.length() * 0.5;
-
-	float denom = dot(dir, N);
-	if (fabs(denom) < EPSILON)
-		return false;
-	float d = -dot(N, a);
-	float t = -(dot(N, p) + d) / denom;
-
-	vec3 intersect = p + t * dir;
-
-	vec3 e1 = b - a;
-	vec3 e2 = intersect - a;
-	vec3 cx = cross(e1, e2);
-	if (dot(cx, N) < 0)
-		return false;
-
-	e1 = c - b;
-	e2 = intersect - b;
-	cx = cross(e1, e2);
-	if (dot(cx, N) < 0)
-		return false;
-	uvw->u = cx.length() * 0.5 / area;
-
-	e1 = a - c;
-	e2 = intersect - c;
-	cx = cross(e1, e2);
-	if (dot(cx, N) < 0)
-		return false;
-	uvw->v = cx.length() * 0.5 / area;
-
-	uvw->w = 1 - uvw->u - uvw->v;
-
-	*t_out = t;
-	*n_out = N;
-
-	return true;
-}
 inline void IntersectTriRay2(const Ray& r, const vec3& v0, const vec3& v1, const vec3& v2, float& t_out, vec3& bary_out)
 {
 	const vec3 edge1 = v1 - v0;
@@ -438,37 +359,8 @@ private:
 	const Mesh* mesh;
 	BVH bvh;
 	Bounds mesh_bounds;
-
-	//std::vector<vec3> flattened_triangles;
 };
-/*
-bool hit = false;
-		for (int i = 0; i < mesh->indicies.size(); i += 3)
-		{
-			vec3 bary = vec3(0);
-			vec3 N;
-			float t;
-			bool res = RayTriangleIntersection(r.pos, r.dir,
-				mesh->verticies[mesh->indicies[i]].position,
-				mesh->verticies[mesh->indicies[i + 1]].position,
-				mesh->verticies[mesh->indicies[i + 2]].position,
-				&bary, &t,&N);
-			if (!res || t > tmax || t< tmin)
-				continue;
-			tmax = t;
-			si->point = r.at(t);
-			// Interpolate normal
-			N = bary.u * mesh->verticies[mesh->indicies[i]].normal +
-				bary.v * mesh->verticies[mesh->indicies[i + 1]].normal +
-				bary.w * mesh->verticies[mesh->indicies[i + 2]].normal;
-			si->set_face_normal(r,-normalize(N));
-			si->t = t;
-			hit = true;
-		}
 
-		return hit;
-
-*/
 class Instance
 {
 public:

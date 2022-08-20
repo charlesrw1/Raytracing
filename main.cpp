@@ -28,7 +28,7 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 128;
+const int SAMPLES_PER_PIXEL = 16;
 const int DIRECT_SAMPLES = 1;
 const int MAX_DEPTH = 4;
 const float GAMMA = 2.2;
@@ -51,25 +51,12 @@ public:
 		int w = image->width;
 		int h = image->height;
 		std::vector<float> weights(w * h);
-
-		//float total_weight_y=0;
-		//cdf_x.resize(w * h);
-		//cdf_y.resize(h);
+		
 		for (int y = 0; y < h; y++) {
-		//	float total_weight_x=0;
 			for (int x = 0; x < w; x++) {
 				weights[y*w+x]= luminance(image->get(x, y));
-				//cdf_x[y * w + x] = total_weight_x;
 			}
-			//for (int x = 0; x < w; x++)
-			//	cdf_x[y * w + x] /= total_weight_x;
-		
-			//total_weight_y += total_weight_x;
-			//cdf_y[y] = total_weight_y;
 		}
-		//for (int y = 0; y < h; y++)
-		//	cdf_y[y] /= total_weight_y;
-
 
 		cdf.resize(w * h);
 		cdf[0] = weights[0];
@@ -82,8 +69,6 @@ public:
 		for (int i = 1; i < w * h; i++) {
 			cdf[i] = cdf[i] / total_sum;
 		}
-
-
 
 	}
 	vec2 binary_search(float val) const {
@@ -564,53 +549,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 #endif
 	mat4 transform = mat4(1.f);
 	
-	/*
-	transform = rotate_y(transform, 25);
-	//transform = rotate_x(transform, 35);
-	transform = translate(transform, vec3(0.32, 0.3, -0.6));
-	//transform = look_at(vec3(0.32, 0.3, -0.6), vec3(0.32, 0.3, -0.6) + vec3(0.2, 0.2, 0.8), vec3(0, 1, 0));
-	world.instances.push_back(Instance(
-		new Box(vec3(0.3,0.6,0.3)),
-		//new Cylinder(0.2,0.4),
-		new Microfacet(nullptr, 0.05, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(1.0),0.5),
-		transform
-	
-	));
-	
-	transform = mat4(1);
-	transform = rotate_y(transform, -25);
-	//transform = rotate_y(transform, 0);
-	transform = translate(transform, vec3(0.68, 0.15, -0.35));
-	//transform = translate(transform, vec3(0.25, 0.40, -0.6));
-	world.instances.push_back(Instance(
-		//new Sphere(0.13),
-		new Box(vec3(0.3, 0.3, 0.3)),
-		//new Cylinder(0.2,0.4),
-		//new GlassMaterial(2.0),
-		new Microfacet(nullptr,0.7,0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(0.8),0.6),
-		transform
-	
-	));
-	*/
-	/*
-	//transform =  scale(mat4(1), vec3(1,1.0,1.3));
-	transform = translate(mat4(1), vec3(0.3, 0.25, -0.1));
-	world.instances.push_back(Instance(
-		new Sphere(0.11),
-		//new Cylinder(0.2,0.4),
-		new Microfacet(nullptr, 0.3, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(1.0),0.5),
-		transform
 
-	));*/
 	
 	transform = scale(mat4(1),vec3(0.26));
 
@@ -727,81 +666,6 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//));
 
 
-	/*
-	transform = translate(mat4(1), vec3(0.75, 0.40, -0.6));
-	world.instances.push_back(Instance(
-		new Sphere(0.1),
-		//new Box(vec3(0.3, 0.3, 0.3)),
-		//new Cylinder(0.2,0.4),
-		//new GlassMaterial(2.0),
-		new Microfacet(nullptr, 0.5, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(0.8),0.6),
-		transform
-
-	));
-	transform = translate(mat4(1), vec3(0.25, 0.15, -0.4));
-	world.instances.push_back(Instance(
-		new Sphere(0.1),
-		//new Box(vec3(0.3, 0.3, 0.3)),
-		//new Cylinder(0.2,0.4),
-		//new GlassMaterial(2.0),
-		new Microfacet(nullptr, 0.6, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(0.8),0.6),
-		transform
-
-	));
-	transform = translate(mat4(1), vec3(0.5, 0.15, -0.4));
-	world.instances.push_back(Instance(
-		new Sphere(0.1),
-		//new Box(vec3(0.3, 0.3, 0.3)),
-		//new Cylinder(0.2,0.4),
-		//new GlassMaterial(2.0),
-		new Microfacet(nullptr, 0.7, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(0.8),0.6),
-		transform
-
-	));
-	transform = translate(mat4(1), vec3(0.75, 0.15, -0.4));
-	world.instances.push_back(Instance(
-		new Sphere(0.1),
-		//new Box(vec3(0.3, 0.3, 0.3)),
-		//new Cylinder(0.2,0.4),
-		//new GlassMaterial(2.0),
-		new Microfacet(nullptr, 0.8, 0),
-		//new MatteMaterial(
-		//	new ConstantTexture(0.725, 0.71, 0.68)),
-		//new MetalMaterial(vec3(0.8),0.6),
-		transform
-
-	));
-	
-	
-	
-	mat4 transform = mat4(1);
-	transform = rotate_x(transform, 100);
-	////transform = rotate_y(transform, 0);
-	transform = translate(transform, vec3(0.5, 0.35, -0.4));
-	world.instances.push_back(Instance(
-		//new Sphere(0.1),
-		new Cylinder(0.25,0.6),
-		//new Box(vec3(0.5)),
-		//new MetalMaterial(vec3(1.0,1.0,0.0),0),
-		new MatteMaterial(
-			new ConstantTexture(0.725, 0.71, 0.68)),
-		//new GlassMaterial(2.0),
-		transform
-	
-	));
-	
-	
-	*/
-	
 	//world.instances.back().print_matricies();
 	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
 	cs = Camera(
@@ -921,117 +785,6 @@ void Conference(Scene& world, Camera& cam)
 		55, WIDTH, HEIGHT);
 }
 
-
-void checker_scene(Scene& world)
-{
-	world.instances.push_back(Instance(new Sphere(0.18), new MetalMaterial(vec3(1)), vec3(0.15, -0.3, -0.2)));
-	
-	world.instances.push_back(Instance(
-		new Sphere(0.5), 
-		//new Cylinder(0.25,0.5),
-		new MetalMaterial(vec3(0.2, 0.2, 1.0)), 
-		vec3(0, 0, -1)));
-
-	world.instances.push_back(Instance(
-		new Sphere(0.25),
-		new MatteMaterial(
-			new CheckeredTexture(vec3(0.8, 0.2, 0.2), vec3(1))),
-		vec3(1, -0.3, -1)));
-
-	world.instances.push_back(Instance(new Sphere(0.25), new GlassMaterial(1.5f), vec3(-0.4, -0.25, -0.5)));
-
-	world.instances.push_back(Instance(
-		new Sphere(100),
-		new MatteMaterial(
-			new CheckeredTexture(vec3(1), vec3(0))),
-		vec3(0, -100.5, -1)));
-
-	world.instances.push_back(Instance(
-		new Box(vec3(2.0,0.3,0.5)),
-		new EmissiveMaterial(vec3(2.0,0.6,0)),
-		vec3(0, 0.5, 0.5)
-
-	));
-
-
-	mat4 transform = translate(mat4(1), vec3(-1.4, -0.25, -1.0));
-	transform = rotate_x(transform, 90);
-	world.instances.push_back(Instance(
-		new Cylinder(0.25, 0.5),
-		new MetalMaterial(vec3(1), 0),
-		//new GlassMaterial(1.5f), 
-		transform));
-
-	world.background_color = vec3(0.5, 0.7, 1.0);
-}
-
-struct ThreadState
-{
-	std::mutex mutex;
-	int current_line;
-	float complete = 0.0;
-
-	const Camera* cs;
-	const Scene* world;
-};
-// per-thread function
-void calc_pixels(int thread_id, ThreadState* ts)
-{
-	srand(time(NULL) + thread_id);
-	Random rng(thread_id);
-	while (1)
-	{
-		int line;
-		ts->mutex.lock();
-		line = ts->current_line++;
-		float percent = float(line) / (HEIGHT - 1);
-		if (percent >= ts->complete) {
-			printf("%d...", int(round(percent * 10)));
-			ts->complete += 0.1;
-		}
-		ts->mutex.unlock();
-
-		if (line >= HEIGHT)
-			return;
-
-		for (int x = 0; x < WIDTH; x++) {
-			vec3 total = vec3(0.0);
-
-			// Variance calculation
-			int count;	// count
-			//vec3 mean = vec3(0);
-			//float mean_dist2 = 0;
-			//float variance;
-
-			//vec3 delta;
-
-			for (int s = 0; s < SAMPLES_PER_PIXEL; s++) {
-				count = s + 1;
-
-				float u = float(x + random_float());// / (WIDTH - 1);
-				float v = float(line + random_float());// / (HEIGHT - 1);
-				vec2 coords = hammersley_2d(s, SAMPLES_PER_PIXEL);
-				coords += vec2(x, line);
-
-				Ray r = ts->cs->get_ray(coords.x, coords.y);
-				vec3 sample = get_ray_color(r, *ts->world, MAX_DEPTH);
-
-
-				total += sample;
-
-
-				//delta = sample - mean;
-				//mean += delta / (float)count;
-				//mean_dist2 += dot(delta, delta) * (s > 0);
-				//variance = mean_dist2 / (count - 1);
-
-			}
-			//write_out(total, x, (HEIGHT - 1) - line, count);
-			//write_out_no_scale(vec3(variance), x, (HEIGHT - 1) - line);
-		}
-
-	}
-}
 
 struct Options
 {
@@ -1223,18 +976,18 @@ int main()
 {
 
 	srand(time(NULL));
-	env = load_hdr("loft.hdr");
+	env = load_hdr("noon_grass.hdr");
 	if (!env)
 		return 1;
 
 	//env->downsample(4);
 
-	el_g = new EnviormentLight(env,90);
+	el_g = new EnviormentLight(env,0);
 
 	Scene world;
 	Camera cam;
-	BallTestScene(world, cam);
-	//cornell_box_scene(world,cam);
+	//BallTestScene(world, cam);
+	cornell_box_scene(world,cam);
 	//Sponza(world, cam);
 	//Conference(world, cam);
 	world.build_top_level_bvh();

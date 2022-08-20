@@ -127,8 +127,7 @@ public:
 	BVH tlas;
 	std::vector<Instance> instances;
 
-	std::vector<Instance> lights;	// analytic
-	//std::vector<AbstractLight> abs_lights;
+	std::vector<Instance> lights;
 
 	vec3 background_color = vec3(0);
 

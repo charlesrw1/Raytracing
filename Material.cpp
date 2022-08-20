@@ -1,18 +1,5 @@
 #include "Material.h"
 
-//const float TEMP_ALPHA = 0.1;// 0.01;
-
-float BeckmannDistribution(const vec3& H, const vec3& N, float roughness)
-{
-	float roughness_2 = roughness * roughness;
-	float hdotn = max(dot(H, N), 0);
-	if (hdotn <= 0 || roughness <= 0) return 0;
-	float theta_h = acos(hdotn);
-
-	float denom = roughness_2 * PI * pow(hdotn, 4);
-	return exp(-pow(tan(theta_h), 2) / roughness_2) / denom;
-}
-
 // From 'Microfacet Models for Refraction through Rough Surfaces'
 float GGXDistribution(const vec3& N, const vec3& H, float alpha)
 {
@@ -78,39 +65,6 @@ vec3 GGXEval(const Intersection& si, const vec3& V, const vec3& H, const vec3& L
 	return max(dot(si.normal,L),0)*(D*F*G) / denom;
 }
 
-// -------------UNUSED------------------------
-float GGXSmithG1(const vec3& v, const vec3& normal, float roughness)
-{
-	float vdotn = dot(v, normal);
-	if (vdotn < 0)
-		return 0;
-	float theta_v = acos(vdotn);
-	float denom = 1 + sqrt(1.f + (roughness * roughness) * pow(tan(theta_v), 2));
-	return 2 / denom;
-}
-float GGXSmith(const vec3& normal, const vec3& ray_in, const vec3& ray_out, float roughness)
-{
-	return GGXSmithG1(ray_in, normal, roughness) * GGXSmithG1(ray_out, normal, roughness);
-}
-
-float DistributionGGX(const vec3& N, const vec3& H, float alpha)
-{
-	float alpha_2 = alpha * alpha;
-	float NdotH = max(dot(N, H), 0);
-	float denom = (NdotH * NdotH) * (alpha_2 - 1.f) + 1.f;
-	return alpha_2 / (PI * denom * denom);
-}
-
-float PDF_ggx(const vec3& V, const vec3& H, const vec3& N,float alpha)
-{
-	float ndoth = max(dot(H, N), 0);
-	float vdoth = max(dot(V, H), 0);
-
-	return DistributionGGX(V, H, alpha) * ndoth;// /(4*vdoth)
-}
-// ---------------------------------------------
-
-
 vec3 Microfacet::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
 {
 	float alpha = roughness* roughness;
@@ -153,26 +107,7 @@ float Microfacet::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& norma
 	//	pdf = 100'000.0;
 	return pdf;
 }
-/*
 
-{
-		vec3 micro_n = GGXSample(normal, roughness);
-		vec3 ray_dir = normalize(reflect(-in_dir, micro_n));
-
-		*out_ray = Ray(si.point + normal * 0.001f, ray_dir);
-		return Eval(si, in_dir, ray_dir, normal, pdf);
-	}
-
-	{
-		*pdf = CalcPDF(in_dir, out_dir, si.normal, normal);
-		vec3 F0(0.04);
-		float G = GGXSmith(normal, in_dir, out_dir,roughness);
-		float D = GGXDistribution(normal,)
-
-
-		return albedo->sample(si.u, si.v, si.point) * max(dot(normal, out_dir), 0.f) / PI;
-	}
-*/
 
 ////////// Diffuse //////////
 
@@ -421,121 +356,6 @@ float DielectricFresnel(float n_dot_i, float eta)
 	return DielectricFresnel(abs(n_dot_i), n_dot_t, eta);
 }
 
-#if 0
-vec3 EvalDisneyRefraction(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay, vec3 base, float* pdf)
-{
-	float D = TrowbridgeReitzDistribution(H, ax, ay);
-	float F = DielectricFresnel(V,L,H, eta);
-	float g1 = SmithOcclusionAni_(V, ax, ay);
-	float g2 = SmithOcclusionAni_(L, ax, ay);
-	float G = g1 * g2;
-
-	float denom = pow(dot(L, H) + dot(V, H) * eta,2);
-	float jacobian = abs(dot(L, H)) / denom;
-
-	*pdf = g1 * D * max(dot(V, H), 0) * jacobian / V.z;
-
-	return sqrt(base) * (1 - F) *D*G* abs(dot(V, H)) * jacobian / V.z;
-}
-
-vec3 EvalDisneyReflection(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay, vec3 base, float* pdf)
-{
-	float F = DielectricFresnel(V,L,H, eta);
-	float D = TrowbridgeReitzDistribution(H, ax, ay);
-	float g1 = SmithOcclusionAni_(V, ax, ay);
-	float g2 = SmithOcclusionAni_(L, ax, ay);
-	float G = g1 * g2;
-
-	*pdf = D * g1 / (4 * V.z);
-
-	return base*F * D * G / (4 * V.z);
-}
-
-vec3  DisneyGlass::Sample_Eval(const Intersection& si, const vec3 in_dir, const vec3& normal, Ray* out_ray, float* pdf) const
-{
-	float refrac_ratio = (si.front_face) ? (1.0 / eta) : eta;
-
-
-	float aspect = sqrt(1.0 - anisotropic * 0.9);
-	float ax = max(0.001, roughness * roughness / aspect);
-	float ay = max(0.001, roughness * roughness * aspect);
-
-	vec3 T, B;
-	ONB(normal, T, B);
-	// To tangent space
-	vec3 V = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
-	vec3 H = sampleGGXVNDF(V, ax, ay);
-	vec3 L;
-	vec3 out;
-	float r0 = R0(refrac_ratio);
-	float F = r0 + (1 - r0) * pow(1 - max(dot(H, V), 0), 5);
-	if (0)
-	{
-		// reflect
-		L = normalize(reflect(-V, H));
-		out = EvalDisneyReflection(V, L, H, refrac_ratio, ax, ay, albedo, pdf);
-	}
-	else
-	{
-		// refract
-		L = refract(-V, H, refrac_ratio);
-		out = EvalDisneyRefraction(V, L, H, refrac_ratio, ax, ay, albedo, pdf);
-	}
-
-
-	L = L.x * T + L.y * B + L.z * si.normal;
-	*out_ray = Ray(si.point + si.normal * ((si.front_face)?0.00001:-0.00001), L);
-
-	return out;
-
-}
-vec3  DisneyGlass::Eval(const Intersection& si, const vec3& in_dir, const vec3& out_dir, const vec3& normal, float* pdf) const
-{
-	float aspect = sqrt(1.0 - anisotropic * 0.9);
-	float ax = max(0.001, roughness * roughness / aspect);
-	float ay = max(0.001, roughness * roughness * aspect);
-
-	vec3 T, B;
-	ONB(normal, T, B);
-	// To tangent space
-	vec3 V = vec3(dot(-in_dir, T), dot(-in_dir, B), dot(-in_dir, normal));
-	vec3 L = vec3(dot(out_dir, T), dot(out_dir, B), dot(out_dir, normal));
-	vec3 H = normalize(V + L);
-
-	float refrac_ratio = (si.front_face) ? (1.0 / eta) : eta;
-
-
-
-	return EvalDisneyReflection(V, L, H, eta, ax, ay, albedo, pdf);
-}
-float DisneyGlass::PDF(const vec3& in_dir, const vec3& out_dir, const vec3& normal) const
-{
-	return 0;
-}
-#endif
-
-/*
-
-float refrac_ratio = (si.front_face) ? (1.0 / index_r) : index_r;
-
-		float cos_theta = fmin(dot(-in_dir, si.normal), 1.0);
-		float sin_theta = sqrt(1.f - cos_theta * cos_theta);
-
-		bool cant_refract = refrac_ratio * sin_theta > 1.f;
-		vec3 direction;
-		if (cant_refract)
-			direction = reflect(-in_dir, si.normal);
-		else
-			direction = refract(in_dir, si.normal, refrac_ratio);
-
-		//vec3 refracted = refract(ray_in.dir, res.normal, refrac_ratio);
-		*out_ray = Ray(si.point + si.normal * ((cant_refract) ? 0.001f : -0.001f), normalize(direction));
-		*pdf = 1;
-
-		return vec3(1);
-
-
-*/
 
 vec3 EvalDisneyRefraction(vec3 V, vec3 L, vec3 H, float eta, float ax, float ay, vec3 base, float* pdf)
 {
