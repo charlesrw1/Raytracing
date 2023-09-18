@@ -2,6 +2,7 @@
 #define MESH_H
 
 #include "Def.h"
+#include "BVH.h"
 #include <vector>
 
 struct Vertex
@@ -11,15 +12,21 @@ struct Vertex
 	vec2 uv;
 };
 
+struct MeshTriangle
+{
+	uint32_t indicies[3] = { 0,0,0 };
+	uint32_t materialIndex = 0;
+};
+
 class Mesh
 {
 public:
-	std::vector<Vertex> verticies;
-	std::vector<int> indicies;
-	Bounds mesh_aabb;
-};
+	void build();
 
-Mesh* import_mesh(const char* obj_file);
+	std::vector<Vertex> verts;
+	std::vector<MeshTriangle> triangles;
+	BVH accelStructure;
+};
 
 
 #endif // !MESH_H

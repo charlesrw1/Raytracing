@@ -4,6 +4,7 @@
 #include "Def.h"
 #include "Object.h"
 #include "Filter.h"
+#include "Image.h"
 #include <vector>
 
 class Camera
@@ -92,13 +93,22 @@ struct SunAndSky
 	float sun_azimuth;
 };
 
+namespace tinygltf {
+	class Model;
+	class Node;
+	class Mesh;
+	class Material;
+	class Camera;
+}
 class Scene
 {
 public:
-	~Scene() {
-		for (int i = 0; i < instances.size(); i++)
-			instances[i].free_data();
-	}
+	~Scene();
+	bool load_from_gltf(const std::string& gltfPath);
+	Material* load_gltf_materials(const tinygltf::Material& inputMat);
+	void load_gltf_models(Mesh& model, const tinygltf::Model& inputMod, const tinygltf::Mesh& mesh, const mat4& toWorld);
+	void traverse_gltf_node_heirarchy(const tinygltf::Model& model, const tinygltf::Node& node, mat4 transform);
+	void add_gltf_scene_camera(const tinygltf::Camera& camera, mat4 transform);
 
 	bool trace_scene(Ray r, float tmin, float tmax, Intersection* res) const {
 		//Trace temp;
@@ -124,8 +134,17 @@ public:
 	bool closest_hit(Ray r, Intersection* res) const;
 
 
-	BVH tlas;
-	std::vector<Instance> instances;
+	//BVH tlas;
+	//std::vector<Instance> instances;
+	//
+
+	bool hasCamera = false;
+	Camera sceneCamera;
+	Mesh sceneMergedMesh;
+	std::vector<Material*> materials;
+	std::vector<Image*> images;
+
+
 
 	std::vector<Instance> lights;
 

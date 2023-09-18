@@ -4,61 +4,42 @@
 #include "Math.h"
 
 
-template< typename T >
 class Image
 {
 public:
-	Image(int w, int h) 
-		:width(w), height(h) {
-		data.resize(w * h);
-	}
-
-	void downsample(int n)
-	{
-		int old_w = width;
-		int old_h = height;
-		int new_w = width >> 1;
-		int new_h = height >> 1;
-		std::vector<T> temp_data(new_w*new_h);
-		bool writing_to_temp = true;
-		T* write_buf = temp_data.data();
-		T* read_buf = data.data();
-		for (int i = 0; i < n; i++)
-		{
-			for (int x = 0; x < new_w; x++) {
-				for (int y = 0; y < new_h; y++) {
-					write_buf[y * new_w + x] = (read_buf[y * 2 * old_w + x * 2] +
-						read_buf[(y * 2 + 1) * old_w + x * 2] +
-						read_buf[(y * 2 + 1) * old_w + x * 2 + 1] +
-						read_buf[y * 2 * old_w + x * 2 + 1]) * 0.25;
-				}
- 			}
-			if (writing_to_temp) {
-				write_buf = data.data();
-				read_buf = temp_data.data();
-			}
-			else {
-				write_buf = temp_data.data();
-				read_buf = data.data();
-			}
-			writing_to_temp = !writing_to_temp;
-			old_w = new_w;
-			old_h = new_h;
-			new_w >>= 1;
-			new_h >>= 1;
-		}
-		if (!writing_to_temp)
-			data = std::move(temp_data);
-
-		width = old_w;
-		height = old_h;
-	}
+	
+	enum class Format {
+		None,
+		RGBA_32f,
+		RGB_32f,
+		RGBA_u8,
+		RGB_u8,
+	};
 
 	vec3 get(int x, int y) const {
-		return data[width * y + x];
-	}
-	void set(int x, int y, vec3 color) {
-		data[width * y + x] = color;
+		switch (internalFormat)
+		{
+		case Format::RGBA_32f: {
+			float* data = (float*)imageData.data();
+			int offset = (width * y + x) * 4;
+			return vec3(data[offset], data[offset + 1], data[offset + 2]);
+		} break;
+		case Format::RGB_32f: {
+			float* data = (float*)imageData.data();
+			int offset = (width * y + x) * 3;
+			return vec3(data[offset], data[offset + 1], data[offset + 2]);
+		} break;
+		case Format::RGBA_u8: {
+			uint8_t* data = (uint8_t*)imageData.data();
+			int offset = (width * y + x) * 4;
+			return vec3(data[offset], data[offset + 1], data[offset + 2]) / 255.f;
+		}
+		case Format::RGB_u8: {
+			uint8_t* data = (uint8_t*)imageData.data();
+			int offset = (width * y + x) * 3;
+			return vec3(data[offset], data[offset + 1], data[offset + 2]) / 255.f;
+		}
+		}
 	}
 
 	// Bilinear filtered
@@ -82,12 +63,13 @@ public:
 			val_cc * (uoff) * (voff);
 	}
 
-
 	int width=0, height=0;
-	std::vector<T> data;
+	std::vector<char> imageData;
+	Format internalFormat = Format::None;
 };
-using HDRImage = Image<vec3>;
+using HDRImage = Image;
 
-HDRImage* load_hdr(std::string filename);
+HDRImage* load_hdr(const std::string& filename);
+Image* load_standard_image(const std::string& filename)
 
 #endif // !IMAGE_H\

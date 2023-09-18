@@ -36,6 +36,9 @@
     <ClCompile Include="Image.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="tiny_gltf.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Math.h">
@@ -75,6 +78,15 @@
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="Filter.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="tiny_gltf.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="json.hpp">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Light.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

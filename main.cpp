@@ -28,7 +28,7 @@ const float NEAR = 1.0;
 
 const vec3 CAM_POS = vec3(0.0,-0.1,0.3);
 
-const int SAMPLES_PER_PIXEL = 16;
+const int SAMPLES_PER_PIXEL = 1;
 const int DIRECT_SAMPLES = 1;
 const int MAX_DEPTH = 4;
 const float GAMMA = 2.2;
@@ -37,6 +37,53 @@ const char* OUTPUT_NAME[2] = { "Output.bmp","Output2.bmp" };
 
 HDRImage* env;
 #define IMPORTANCE_SAMPLE_ENV
+
+
+class TableDistribution
+{
+public:
+	void build(std::vector<float>& weights, int width, int height) {
+		dimensions = vec2i(width, height);
+		cdf.resize(width*height);
+		cdf[0] = weights[0];
+		for (int i = 1; i < width*height; i++) {
+			cdf[i] = cdf[i - 1] + weights[i];
+		}
+
+		totalSum = cdf[width * height - 1];
+
+		for (int i = 1; i < width * height; i++) {
+			cdf[i] = cdf[i] / totalSum;
+		}
+	}
+	vec2i binary_search(float searchVal) const {
+		int lower = 0;
+		int upper = dimensions.y - 1;
+		while (lower < upper) {
+			int mid = (lower + upper) / 2;
+			if (searchVal < cdf[(mid + 1) * dimensions.x - 1])
+				upper = mid;
+			else
+				lower = mid + 1;
+		}
+		int y = lower;
+		lower = 0;
+		upper = dimensions.x - 1;
+		while (lower < upper) {
+			int mid = (lower + upper) / 2;
+			if (searchVal < cdf[y * dimensions.x + mid])
+				upper = mid;
+			else
+				lower = mid + 1;
+		}
+		int x = lower;
+		return vec2i(x, y);
+	}
+private:
+	vec2i dimensions = {};
+	std::vector<float> cdf;
+	float totalSum = 0.f;
+};
 
 class EnviormentLight
 {
@@ -669,7 +716,7 @@ void cornell_box_scene(Scene& world, Camera& cs)
 	//world.instances.back().print_matricies();
 	world.background_color = vec3(0);// pow(rgb_to_float(48, 45, 57), 2.2);
 	cs = Camera(
-		look_at(vec3(-1., 0.2, 1), vec3(0.0, 0.2, 0), vec3(0, 1, 0)),
+		look_at(vec3(-1.0, 0.5, 0.8), vec3(0.0, 0.2, 0), vec3(0, 1, 0)),
 		//look_at(vec3(24., 0.8, 0.), vec3(20, 1.8, 0), vec3(0, 1, 0)),
 
 		45, WIDTH, HEIGHT);
@@ -975,6 +1022,8 @@ void Renderer::render_image(const Camera& cam, const Scene& scene, const Options
 int main()
 {
 
+	const char* sceneFile = "noon.gltf";
+
 	srand(time(NULL));
 	env = load_hdr("noon_grass.hdr");
 	if (!env)
@@ -992,6 +1041,7 @@ int main()
 	//Conference(world, cam);
 	world.build_top_level_bvh();
 	Options options;
+	options.samples_per_pixel = 128;
 	
 	Renderer render;
 	render.render_image(cam, world, options);

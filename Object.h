@@ -248,7 +248,7 @@ inline void IntersectTriRay2(const Ray& r, const vec3& v0, const vec3& v1, const
 	const vec3 edge2 = v2 - v0;
 	const vec3 h = cross(r.dir, edge2);
 	const float a = dot(edge1, h);
-	if (a > -0.0001f && a < 0.0001f) return; // ray parallel to triangle
+	if (a > -0.0000001 && a < 0.0000001) return; // ray parallel to triangle
 	const float f = 1 / a;
 	const vec3 s = r.pos - v0;
 	const float u = f * dot(s, h);

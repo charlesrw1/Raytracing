@@ -162,9 +162,9 @@ Mesh* import_mesh(const char* obj_file)
 		}
 	}
 
-	Mesh* m = new Mesh;
-	m->indicies = std::move(indicies);
-	m->verticies = std::move(verticies);
+	//Mesh* m = new Mesh;
+	//m->indicies = std::move(indicies);
+	//m->verticies = std::move(verticies);
 
-	return m;
+	return nullptr;
 }
